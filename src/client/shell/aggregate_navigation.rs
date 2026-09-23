@@ -289,6 +289,10 @@ pub(super) fn navigator_rows(
         None => true,
     };
     let text = |value: &str| query.is_empty() || value.to_lowercase().contains(&query);
+    // Labels go through the fuzzy scorer so e.g. "piconfig" finds "pi config";
+    // meta (paths, branches) stay substring-only for visibility.
+    let label_hit =
+        |value: &str| query.is_empty() || navigator_label_match_score(value, &query) > 0;
     let filtering = navigator.filter.is_some() || !query.is_empty();
     let federated = endpoints.len() > 1;
     let depth_offset = u8::from(federated);
@@ -296,7 +300,7 @@ pub(super) fn navigator_rows(
 
     for endpoint in endpoints {
         let stale = endpoint.status != ClientEndpointStatus::Online;
-        let endpoint_query_matches = !query.is_empty() && text(&endpoint.label);
+        let endpoint_query_matches = !query.is_empty() && label_hit(&endpoint.label);
         let mut endpoint_rows = Vec::new();
         if let Some(snapshot) = endpoint.snapshot.as_deref() {
             for workspace in &snapshot.workspaces {
@@ -336,7 +340,7 @@ pub(super) fn navigator_rows(
                             .unwrap_or_default();
                         if !filtering
                             || filter(status)
-                                && (endpoint_query_matches || text(&label) || text(&meta))
+                                && (endpoint_query_matches || label_hit(&label) || text(&meta))
                         {
                             panes.push(ClientNavigatorRow {
                                 depth: 2 + depth_offset,
@@ -354,7 +358,8 @@ pub(super) fn navigator_rows(
                         }
                     }
                     if !filtering
-                        || filter(tab.agent_status) && (endpoint_query_matches || text(&tab.label))
+                        || filter(tab.agent_status)
+                            && (endpoint_query_matches || label_hit(&tab.label))
                         || !panes.is_empty()
                     {
                         children.push(ClientNavigatorRow {
@@ -380,7 +385,9 @@ pub(super) fn navigator_rows(
                     }
                 }
                 let workspace_matches = filter(workspace.agent_status)
-                    && (endpoint_query_matches || text(&workspace.label) || text(&workspace_meta));
+                    && (endpoint_query_matches
+                        || label_hit(&workspace.label)
+                        || text(&workspace_meta));
                 if !filtering || workspace_matches || !children.is_empty() {
                     let key = (endpoint.endpoint_id.clone(), workspace.workspace_id.clone());
                     endpoint_rows.push(ClientNavigatorRow {
@@ -427,7 +434,60 @@ pub(super) fn navigator_selected_index(
 ) -> Option<usize> {
     match navigator.selected.as_ref() {
         Some(target) => rows.iter().position(|row| row.target == *target),
-        None => (!rows.is_empty()).then_some(0),
+        None => {
+            let query = navigator.query.trim().to_lowercase();
+            if query.is_empty() {
+                return (!rows.is_empty()).then_some(0);
+            }
+            // No explicit selection yet (e.g. right after typing in the search
+            // box): land on the best-matching row instead of the first row,
+            // which is always a workspace kept as a matched child's ancestor.
+            // Ties keep the earliest row, so outer units (workspace > tab >
+            // pane) win over deeper ones and earlier siblings beat later ones.
+            let mut best: Option<(usize, usize)> = None;
+            for (index, row) in rows.iter().enumerate() {
+                let score = navigator_label_match_score(&row.label, &query);
+                if score == 0 {
+                    continue;
+                }
+                if best.is_none_or(|(best_score, _)| score > best_score) {
+                    best = Some((score, index));
+                }
+            }
+            best.map(|(_, index)| index)
+                .or((!rows.is_empty()).then_some(0))
+        }
+    }
+}
+
+/// Whether every character of `needle` appears in `haystack` in order, with
+/// gaps allowed, so "piconfig" matches the pane label "pi config".
+fn is_subsequence(needle: &str, haystack: &str) -> bool {
+    let mut chars = haystack.chars();
+    needle.chars().all(|n| chars.any(|c| c == n))
+}
+
+/// Rank how strongly `label` matches a lowercased, trimmed search `query`.
+/// Higher wins; 0 means no match on the label itself (the row is only visible
+/// because a descendant matched).
+pub(super) fn navigator_label_match_score(label: &str, query: &str) -> usize {
+    if query.is_empty() {
+        return 0;
+    }
+    let label = label.to_lowercase();
+    if label == query {
+        4
+    } else if label.starts_with(query) {
+        3
+    } else if label
+        .split([' ', '-', '_', '/', '.', ':'])
+        .any(|word| word.starts_with(query))
+    {
+        2
+    } else if label.contains(query) || is_subsequence(query, &label) {
+        1
+    } else {
+        0
     }
 }
 
@@ -436,4 +496,189 @@ pub(super) fn selected_navigator_target(
     navigator: &ClientNavigatorOverlay,
 ) -> Option<ClientNavigatorTarget> {
     navigator_selected_index(rows, navigator).map(|index| rows[index].target.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(depth: u8, label: &str, target: ClientNavigatorTarget) -> ClientNavigatorRow {
+        ClientNavigatorRow {
+            depth,
+            label: label.to_owned(),
+            meta: String::new(),
+            status: None,
+            stale: false,
+            current: false,
+            target,
+        }
+    }
+
+    fn workspace_row(label: &str) -> ClientNavigatorRow {
+        row(
+            0,
+            label,
+            ClientNavigatorTarget::Workspace {
+                endpoint_id: ClientEndpointId::Local,
+                workspace_id: format!("ws-{label}"),
+            },
+        )
+    }
+
+    fn tab_row(label: &str) -> ClientNavigatorRow {
+        row(
+            1,
+            label,
+            ClientNavigatorTarget::Tab {
+                endpoint_id: ClientEndpointId::Local,
+                tab_id: format!("tab-{label}"),
+            },
+        )
+    }
+
+    fn pane_row(label: &str) -> ClientNavigatorRow {
+        row(
+            2,
+            label,
+            ClientNavigatorTarget::Pane {
+                endpoint_id: ClientEndpointId::Local,
+                pane_id: format!("pane-{label}"),
+            },
+        )
+    }
+
+    fn navigator_with_query(query: &str) -> ClientNavigatorOverlay {
+        ClientNavigatorOverlay {
+            query: text_editor::TextEditor::new(query, false),
+            search_focused: true,
+            selected: None,
+            scroll: 0,
+            filter: None,
+            expanded_workspaces: HashSet::new(),
+        }
+    }
+
+    fn selected_label(rows: &[ClientNavigatorRow], navigator: &ClientNavigatorOverlay) -> String {
+        let index = navigator_selected_index(rows, navigator).expect("selected");
+        rows[index].label.clone()
+    }
+
+    #[test]
+    fn query_lands_on_matching_tab_not_ancestor_workspace() {
+        // Config workspace is only kept as Herdr's ancestor and must not win.
+        let rows = vec![
+            workspace_row("Config"),
+            tab_row("Herdr"),
+            pane_row("pane 1"),
+        ];
+        assert_eq!(selected_label(&rows, &navigator_with_query("her")), "Herdr");
+    }
+
+    #[test]
+    fn query_lands_on_workspace_when_only_it_matches() {
+        let rows = vec![
+            workspace_row("Config"),
+            tab_row("Herdr"),
+            pane_row("pane 1"),
+        ];
+        assert_eq!(
+            selected_label(&rows, &navigator_with_query("con")),
+            "Config"
+        );
+    }
+
+    #[test]
+    fn query_lands_on_pane_when_only_it_matches() {
+        let rows = vec![
+            workspace_row("Config"),
+            tab_row("Herdr"),
+            pane_row("pane 1"),
+        ];
+        assert_eq!(
+            selected_label(&rows, &navigator_with_query("pane 1")),
+            "pane 1"
+        );
+    }
+
+    #[test]
+    fn equal_score_prefers_outer_unit_then_first_sibling() {
+        // Workspace and tab match equally well; the earlier (outer) row wins.
+        let rows = vec![workspace_row("Herdr"), tab_row("herdr-app")];
+        assert_eq!(selected_label(&rows, &navigator_with_query("her")), "Herdr");
+
+        // Same level: first matching sibling wins.
+        let tabs = vec![
+            workspace_row("Config"),
+            tab_row("alpha"),
+            tab_row("alpha-2"),
+            pane_row("pane 1"),
+        ];
+        assert_eq!(selected_label(&tabs, &navigator_with_query("alp")), "alpha");
+    }
+
+    #[test]
+    fn match_quality_beats_row_order() {
+        // "pane" only contains the query, while the later row has it as prefix.
+        let rows = vec![pane_row("pane one"), tab_row("one"), workspace_row("misc")];
+        assert_eq!(selected_label(&rows, &navigator_with_query("one")), "one");
+    }
+
+    #[test]
+    fn no_label_match_falls_back_to_first_row() {
+        // Query only hits meta (e.g. cwd); selection keeps the old behavior.
+        let rows = vec![workspace_row("Config"), tab_row("Herdr")];
+        assert_eq!(
+            selected_label(&rows, &navigator_with_query("zzz")),
+            "Config"
+        );
+    }
+
+    #[test]
+    fn empty_query_and_explicit_selection_keep_old_behavior() {
+        let rows = vec![workspace_row("Config"), tab_row("Herdr")];
+        assert_eq!(selected_label(&rows, &navigator_with_query("")), "Config");
+
+        let mut navigator = navigator_with_query("her");
+        navigator.selected = Some(ClientNavigatorTarget::Pane {
+            endpoint_id: ClientEndpointId::Local,
+            pane_id: "pane-pane 1".to_owned(),
+        });
+        let rows = vec![
+            workspace_row("Config"),
+            tab_row("Herdr"),
+            pane_row("pane 1"),
+        ];
+        assert_eq!(selected_label(&rows, &navigator), "pane 1");
+    }
+
+    #[test]
+    fn fuzzy_query_matches_pane_with_spaces() {
+        let rows = vec![
+            workspace_row("Config"),
+            tab_row("Herdr"),
+            pane_row("pi config"),
+        ];
+        // Characters in order, gaps allowed (the space is skipped).
+        assert_eq!(
+            selected_label(&rows, &navigator_with_query("piconfig")),
+            "pi config"
+        );
+        assert_eq!(
+            selected_label(&rows, &navigator_with_query("pcfg")),
+            "pi config"
+        );
+        // Out-of-order queries must not match.
+        assert_eq!(navigator_label_match_score("pi config", "configpi"), 0);
+    }
+
+    #[test]
+    fn label_match_score_ranks_quality_tiers() {
+        let score = |label: &str, query: &str| navigator_label_match_score(label, query);
+        assert_eq!(score("herdr", "herdr"), 4);
+        assert_eq!(score("Herdr", "her"), 3);
+        assert_eq!(score("my-herdr-app", "her"), 2);
+        assert_eq!(score("another", "her"), 1);
+        assert_eq!(score("unrelated", "her"), 0);
+        assert_eq!(score("anything", ""), 0);
+    }
 }
