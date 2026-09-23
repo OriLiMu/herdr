@@ -593,6 +593,10 @@ impl TerminalRuntime {
 
 #[cfg(test)]
 impl TerminalRuntime {
+    pub(crate) fn test_enable_kitty_source_forwarding(&self) {
+        self.0.test_enable_kitty_source_forwarding();
+    }
+
     pub(crate) fn test_contend_during_dirty_collection(
         &self,
         bytes: Vec<u8>,

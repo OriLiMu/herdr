@@ -7,7 +7,7 @@ use crate::app::state::AppState;
 use crate::protocol::render_ansi::{BlitEncoder, EncodedBlit};
 use crate::protocol::{
     CursorState, FrameData, PaneSurfaceFrame, PaneSurfacePatch, RenderEncoding, ServerMessage,
-    TerminalFrame,
+    SurfaceGraphicsAssetKey, SurfaceGraphicsScene, TerminalFrame,
 };
 use crate::terminal::TerminalRuntimeRegistry;
 
@@ -152,9 +152,18 @@ impl ClientRenderState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn prepare_pane_surface(
         &mut self,
+        surface: PaneSurfaceFrame,
+    ) -> Option<PreparedRender> {
+        self.prepare_pane_surface_with_file(surface, false)
+    }
+
+    pub(crate) fn prepare_pane_surface_with_file(
+        &mut self,
         mut surface: PaneSurfaceFrame,
+        has_file_upload: bool,
     ) -> Option<PreparedRender> {
         let Self::Semantic {
             last_surface,
@@ -166,7 +175,8 @@ impl ClientRenderState {
         else {
             return None;
         };
-        if !*recompute_pending
+        if !has_file_upload
+            && !*recompute_pending
             && surface.graphics.assets.is_empty()
             && last_surface.as_deref().is_some_and(|last| {
                 last.projection_revision == surface.projection_revision
@@ -182,6 +192,7 @@ impl ClientRenderState {
         }
         surface.surface_revision = surface_revision.saturating_add(1);
         let assets = std::mem::take(&mut surface.graphics.assets);
+        let queued_graphics_assets = assets.iter().map(|asset| asset.key.clone()).collect();
         let committed_surface = surface.clone();
         surface.graphics.assets = assets;
         let mut message = ServerMessage::PaneSurface(surface);
@@ -217,6 +228,7 @@ impl ClientRenderState {
         Some(PreparedRender::Semantic {
             message: delta.or(reused).unwrap_or(message),
             committed_surface: Box::new(committed_surface),
+            queued_graphics_assets,
         })
     }
 
@@ -342,6 +354,7 @@ pub(crate) enum PreparedRender {
     Semantic {
         message: ServerMessage,
         committed_surface: Box<PaneSurfaceFrame>,
+        queued_graphics_assets: Vec<SurfaceGraphicsAssetKey>,
     },
     SemanticPatch {
         message: ServerMessage,
@@ -362,9 +375,26 @@ impl PreparedRender {
         }
     }
 
+    /// Graphics metadata represented by this semantic update plus only the
+    /// asset keys whose pixel payloads were queued. This is independent of the
+    /// selected wire codec and avoids cloning asset byte vectors.
+    pub(crate) fn queued_surface_graphics(
+        &self,
+    ) -> Option<(&SurfaceGraphicsScene, &[SurfaceGraphicsAssetKey])> {
+        match self {
+            Self::Semantic {
+                committed_surface,
+                queued_graphics_assets,
+                ..
+            } => Some((&committed_surface.graphics, queued_graphics_assets)),
+            Self::SemanticPatch { .. } | Self::TerminalAnsi { .. } => None,
+        }
+    }
+
     pub(crate) fn strip_pane_surface_assets(&mut self) -> bool {
         let Self::Semantic {
             message: ServerMessage::PaneSurface(surface),
+            queued_graphics_assets,
             ..
         } = self
         else {
@@ -374,6 +404,7 @@ impl PreparedRender {
             return false;
         }
         surface.graphics.assets.clear();
+        queued_graphics_assets.clear();
         true
     }
 }
@@ -728,6 +759,31 @@ mod tests {
         let mut bytes = Vec::new();
         crate::protocol::write_message(&mut bytes, update.message()).unwrap();
         assert!(bytes.len() < crate::protocol::MAX_FRAME_SIZE);
+    }
+
+    #[test]
+    fn deferred_file_upload_keeps_identical_metadata_and_retries_without_committing() {
+        for reuse in [false, true] {
+            let mut state = ClientRenderState::new(RenderEncoding::SemanticFrame);
+            state.enable_surface_reuse(reuse);
+            let surface = popup_surface("native");
+            let first = state.prepare_pane_surface(surface.clone()).unwrap();
+            state.commit_sent_frame(first);
+            assert!(state.prepare_pane_surface(surface.clone()).is_none());
+            let file = state
+                .prepare_pane_surface_with_file(surface.clone(), true)
+                .unwrap();
+            let retry = state
+                .prepare_pane_surface_with_file(surface.clone(), true)
+                .unwrap();
+            let config = bincode::config::standard();
+            assert_eq!(
+                bincode::serde::encode_to_vec(file.message(), config).unwrap(),
+                bincode::serde::encode_to_vec(retry.message(), config).unwrap()
+            );
+            state.commit_sent_frame(retry);
+            assert!(state.prepare_pane_surface(surface).is_none());
+        }
     }
 
     #[test]

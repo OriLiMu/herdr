@@ -665,8 +665,16 @@ impl HeadlessServer {
                         popup,
                         graphics,
                         graphics_delivery: next_graphics_delivery,
+                        graphics_sources,
                     } = shell_render.expect("active shell surface");
-                    surface_parts = Some((panes, splits, popup, graphics, next_graphics_delivery));
+                    surface_parts = Some((
+                        panes,
+                        splits,
+                        popup,
+                        graphics,
+                        next_graphics_delivery,
+                        graphics_sources,
+                    ));
                     frame
                 }
                 ClientConnectionMode::TerminalPending => continue,
@@ -725,6 +733,20 @@ impl HeadlessServer {
                 }
             };
 
+            if surface_parts
+                .as_ref()
+                .is_some_and(|(_, _, _, graphics, _, _)| {
+                    self.defer_changed_native_geometry(client_id, graphics)
+                })
+            {
+                continue;
+            }
+            let native_upload =
+                surface_parts
+                    .as_mut()
+                    .and_then(|(_, _, _, graphics, delivery, sources)| {
+                        self.prepare_native_scene(client_id, graphics, delivery, sources)
+                    });
             let Some(client) = self.clients.get_mut(&client_id) else {
                 continue;
             };
@@ -734,29 +756,31 @@ impl HeadlessServer {
             };
             let has_graphics = surface_parts
                 .as_ref()
-                .is_some_and(|(_, _, _, graphics, _)| {
+                .is_some_and(|(_, _, _, graphics, _, _)| {
                     !graphics.assets.is_empty()
                         || !graphics.placements.is_empty()
                         || !graphics.retained_assets.is_empty()
                 });
             let mut next_shell_graphics_delivery = None;
-            let prepared = if let Some((panes, splits, popup, graphics, delivery)) = surface_parts {
-                next_shell_graphics_delivery = Some(delivery);
-                client
-                    .render_state
-                    .prepare_pane_surface(protocol::PaneSurfaceFrame {
-                        boot_id: self.client_shell_boot_id.clone(),
-                        projection_revision: shell_projection_revision,
-                        surface_revision: 0,
-                        frame,
-                        panes,
-                        splits,
-                        popup,
-                        graphics,
-                    })
-            } else {
-                client.render_state.prepare_frame(frame)
-            };
+            let prepared =
+                if let Some((panes, splits, popup, graphics, delivery, _)) = surface_parts {
+                    next_shell_graphics_delivery = Some(delivery);
+                    client.render_state.prepare_pane_surface_with_file(
+                        protocol::PaneSurfaceFrame {
+                            boot_id: self.client_shell_boot_id.clone(),
+                            projection_revision: shell_projection_revision,
+                            surface_revision: 0,
+                            frame,
+                            panes,
+                            splits,
+                            popup,
+                            graphics,
+                        },
+                        native_upload.is_some(),
+                    )
+                } else {
+                    client.render_state.prepare_frame(frame)
+                };
             let Some(mut prepared) = prepared else {
                 client.clear_deferred_render();
                 crate::render_prof::event("full_render.skip_identical");
@@ -768,13 +792,18 @@ impl HeadlessServer {
                 crate::protocol::MAX_FRAME_SIZE
             };
             let mut shell_assets_deferred = false;
-            let serialized = match Self::frame_server_message_with_max(prepared.message(), max) {
+            let mut serialized = match Self::frame_server_message_with_max(prepared.message(), max)
+            {
                 Ok(frame) => frame,
                 Err(protocol::FramingError::Oversized { claimed, max }) if has_graphics => {
                     warn!(
                         client_id,
                         claimed, max, "dropping graphics assets from oversized pane surface"
                     );
+                    if native_upload.is_some() {
+                        client.defer_full_render();
+                        continue;
+                    }
                     if !prepared.strip_pane_surface_assets() {
                         crate::render_prof::event("full_render.serialize_oversized");
                         continue;
@@ -809,8 +838,29 @@ impl HeadlessServer {
             let shell_graphics_pending = next_shell_graphics_delivery
                 .as_ref()
                 .is_some_and(crate::kitty_graphics::surface::DeliveryCache::has_pending);
-            match writer.render.try_send(serialized) {
+            if let Some((_, message)) = &native_upload {
+                let Ok(file_frame) =
+                    Self::frame_server_message_with_max(message, MAX_GRAPHICS_FRAME_SIZE)
+                else {
+                    client.defer_full_render();
+                    continue;
+                };
+                serialized.extend_from_slice(&file_frame);
+            }
+            let send = if native_upload.is_some() || self.native_graphics.is_pending(client_id) {
+                writer.render.send_ordered(serialized)
+            } else {
+                writer.render.try_send(serialized)
+            };
+            match send {
                 Ok(()) => {
+                    if let Some((graphics, inline_assets)) = prepared.queued_surface_graphics() {
+                        self.native_graphics
+                            .commit_scene(client_id, graphics, inline_assets);
+                    }
+                    if let Some((pending, _)) = native_upload {
+                        self.native_graphics.commit(client_id, pending);
+                    }
                     if let Some(delivery) = next_shell_graphics_delivery {
                         client.shell_graphics_delivery = delivery;
                     }

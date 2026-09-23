@@ -512,9 +512,19 @@ Search the [Config reference](/docs/config-reference/) for scrollback limits, ne
 
 ## Kitty graphics
 
-Herdr renders pane images by default in compatible outer terminals. Popups, menus, and notifications temporarily hide only the image placements they overlap. Uncovered images stay visible, and hidden placements return when uncovered. Images do not dim with dialog backgrounds.
+Applications and plugins integrate through the standard Kitty graphics protocol emitted in pane terminal output. Herdr renders these images by default in compatible outer terminals. The external socket pane-overlay API has been removed; there is no replacement socket image API.
 
-To disable graphics rendering and the pane graphics API:
+Popups, menus, and notifications temporarily hide only the image placements they overlap. Uncovered images stay visible, and hidden placements return when uncovered. Images do not dim with dialog backgrounds.
+
+On local Unix Ghostty clients, Herdr can send RGB/RGBA pixels and encoded PNG images through temporary files instead of encoding them into terminal output. Applications continue using standard Kitty graphics; Herdr still manages placement, clipping, and visibility. Herdr first checks whether the outer terminal consumes a small test file and keeps inline output if it does not. Other terminals, SSH-launched clients, and nested multiplexers retain inline output. Set `HERDR_KITTY_FILE_TRANSPORT=0` before launching the client to disable this optimization.
+
+For testing only, `HERDR_EXPERIMENTAL_KITTY_PNG_FORWARD=1` on the server preserves eligible quiet PNG uploads as encoded PNG instead of decoding them into pixels. Animation operations decode them when needed; queries and uploads requesting error replies keep full validation. This mode is off by default because corruption inside compressed image data may be detected only downstream, after Herdr has placed the image. It does not forward mutable producer file paths.
+
+For local testing, set `HERDR_EXPERIMENTAL_KITTY_NATIVE_FILES=1` on both the server and client to try file-backed delivery of native RGBA images. Herdr creates its own image snapshot and sends its path instead of pixel bytes to the client; it does not borrow the application's original file. This also enables experimental stable outer image IDs. Unsupported clients or failed transfers fall back to inline delivery. This mode is off by default.
+
+On Linux, `HERDR_EXPERIMENTAL_KITTY_SOURCE_FILES=1` on the server additionally tries to snapshot whole-file, uncompressed native RGBA uploads before reading pixels. This requires a filesystem that supports copy-on-write cloning into Herdr's private `/var/tmp` store. Unsupported filesystems, temporary-file uploads, shared memory, and other formats keep the existing loader. Combine it with native file delivery above to avoid copying pixels between the server and local client. Snapshots are limited to 16 MiB each and 64 MiB total; animation and unsupported clients read their pixels when needed. This experiment is off by default.
+
+To disable Kitty graphics rendering:
 
 ```toml
 [terminal]
@@ -523,7 +533,7 @@ kitty_graphics = false
 
 The legacy `experimental.kitty_graphics` setting remains accepted for existing configurations. `terminal.kitty_graphics` takes precedence when both are set.
 
-Changing this setting requires restarting the affected Herdr server or reattaching the client. In remote sessions, the server's setting controls pane graphics parsing and API availability, while the local client's setting controls output to the outer terminal.
+Changing this setting requires restarting the affected Herdr server or reattaching the client. In remote sessions, the server's setting controls Kitty graphics parsing, while the local client's setting controls output to the outer terminal.
 
 ## Agent session restore
 
