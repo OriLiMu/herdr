@@ -39,6 +39,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_TOOLCHAIN_VERSION: 1.96.1
+  ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache
 
 jobs:
   build-linux:
@@ -92,8 +93,17 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
-      - name: Remove Zig caches
-        run: rm -rf .zig-cache vendor/libghostty-vt/.zig-cache vendor/libghostty-vt/zig-out
+      # Reuse hash-verified dependencies while Codeberg is unavailable.
+      - name: Restore Zig cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .zig-cache
+          key: zig-build-v1-${{ runner.os }}-${{ runner.arch }}-0.16.0-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            zig-build-v1-${{ runner.os }}-${{ runner.arch }}-0.16.0-
+
+      - name: Remove local Zig build outputs
+        run: rm -rf vendor/libghostty-vt/.zig-cache vendor/libghostty-vt/zig-out
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
@@ -161,8 +171,17 @@ jobs:
       - name: Install macOS build tools
         run: brew install cmake ninja
 
-      - name: Remove Zig caches
-        run: rm -rf .zig-cache vendor/libghostty-vt/.zig-cache vendor/libghostty-vt/zig-out
+      # Reuse hash-verified dependencies while Codeberg is unavailable.
+      - name: Restore Zig cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .zig-cache
+          key: zig-build-v1-${{ runner.os }}-${{ runner.arch }}-0.16.0-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            zig-build-v1-${{ runner.os }}-${{ runner.arch }}-0.16.0-
+
+      - name: Remove local Zig build outputs
+        run: rm -rf vendor/libghostty-vt/.zig-cache vendor/libghostty-vt/zig-out
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
@@ -211,10 +230,18 @@ jobs:
         with:
           version: 0.16.0
 
-      - name: Remove Zig caches
+      # Reuse hash-verified dependencies while Codeberg is unavailable.
+      - name: Restore Zig cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .zig-cache
+          key: zig-build-v1-${{ runner.os }}-${{ runner.arch }}-0.16.0-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            zig-build-v1-${{ runner.os }}-${{ runner.arch }}-0.16.0-
+
+      - name: Remove local Zig build outputs
         shell: pwsh
         run: |
-          Remove-Item -Recurse -Force .zig-cache -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force vendor/libghostty-vt/.zig-cache -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force vendor/libghostty-vt/zig-out -ErrorAction SilentlyContinue
 
