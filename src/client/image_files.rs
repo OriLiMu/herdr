@@ -78,7 +78,6 @@ fn environment_allows() -> bool {
 fn allowed(stdin_tty: bool, stdout_tty: bool, env: impl Fn(&str) -> Option<OsString>) -> bool {
     stdin_tty
         && stdout_tty
-        && env("HERDR_KITTY_FILE_TRANSPORT").as_deref() != Some(std::ffi::OsStr::new("0"))
         && env("TERM_PROGRAM").as_deref() == Some(std::ffi::OsStr::new("ghostty"))
         && [
             "SSH_CONNECTION",
@@ -124,20 +123,6 @@ mod tests {
                 base(name)
             }));
         }
-        assert!(!allowed(true, true, |key| {
-            if key == "HERDR_KITTY_FILE_TRANSPORT" {
-                Some(OsString::from("0"))
-            } else {
-                base(key)
-            }
-        }));
-        assert!(allowed(true, true, |key| {
-            if key == "HERDR_KITTY_FILE_TRANSPORT" {
-                Some(OsString::from("1"))
-            } else {
-                base(key)
-            }
-        }));
         assert!(!allowed(true, true, |key| if key == "TERM_PROGRAM" {
             Some(OsString::from("kitty"))
         } else {

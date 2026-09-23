@@ -106,9 +106,6 @@ impl Occlusion {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ClientState {
     scope: String,
-    experimental_stable_ids: bool,
-    #[cfg(unix)]
-    experimental_native_files: bool,
     scene: SurfaceGraphicsScene,
     display_scene: SurfaceGraphicsScene,
     native_image_ids: HashMap<SurfaceGraphicsAssetKey, u32>,
@@ -122,21 +119,11 @@ pub(crate) struct ClientState {
 
 impl ClientState {
     pub(crate) fn new() -> Self {
-        let native_files =
-            std::env::var("HERDR_EXPERIMENTAL_KITTY_NATIVE_FILES").as_deref() == Ok("1");
-        Self {
-            #[cfg(unix)]
-            experimental_native_files: native_files,
-            experimental_stable_ids: native_files
-                || std::env::var("HERDR_EXPERIMENTAL_KITTY_STABLE_IDS").as_deref() == Ok("1"),
-            ..Self::default()
-        }
+        Self::default()
     }
 
     fn image_id(&self, key: &SurfaceGraphicsAssetKey) -> u32 {
-        if self.experimental_stable_ids
-            && matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
-        {
+        if matches!(key.source, SurfaceGraphicsSource::Terminal { .. }) {
             return self
                 .native_image_ids
                 .get(key)
@@ -171,11 +158,8 @@ impl ClientState {
         key: &SurfaceGraphicsAssetKey,
         image_id: u32,
     ) -> bool {
-        if self.experimental_stable_ids
-            && matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
-        {
-            return self.experimental_native_files
-                && !self.stale_images.contains(&image_id)
+        if matches!(key.source, SurfaceGraphicsSource::Terminal { .. }) {
+            return !self.stale_images.contains(&image_id)
                 && !self.forced_delete_images.contains(&image_id)
                 && (image_id == native_host_image_id(&self.scope, key)
                     || image_id == (native_host_image_id(&self.scope, key) ^ NATIVE_SLOT_BIT))
@@ -209,9 +193,7 @@ impl ClientState {
         if !self.accepts_direct_asset(key, image_id) {
             return false;
         }
-        if self.experimental_stable_ids
-            && matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
-        {
+        if matches!(key.source, SurfaceGraphicsSource::Terminal { .. }) {
             self.native_image_ids.insert(key.clone(), image_id);
         }
         self.host
@@ -289,66 +271,63 @@ impl ClientState {
 
     fn refresh_display_scene(&mut self) {
         let mut next = self.scene.clone();
-        if self.experimental_stable_ids {
-            let previous_placements = self
-                .display_scene
-                .placements
-                .iter()
-                .map(|p| ((&p.asset.source, p.logical_placement_id, p.x, p.y), p))
-                .collect::<HashMap<_, _>>();
-            let previous_assets = self
-                .display_scene
-                .retained_assets
-                .iter()
-                .chain(self.display_scene.placements.iter().map(|p| &p.asset))
-                .filter(|key| {
-                    self.host.images.get(&self.image_id(key))
-                        == Some(&image_signature_from_asset(key))
-                })
-                .map(|key| (&key.source, key))
-                .collect::<HashMap<_, _>>();
-            for placement in &mut next.placements {
-                let key = &placement.asset;
-                if !matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
-                    || self.assets.contains_key(key)
-                    || self.host.images.get(&self.image_id(key))
-                        == Some(&image_signature_from_asset(key))
-                {
-                    continue;
-                }
-                // A metadata-only replacement is not visible until its upload is ACKed.
-                // Reuse only an identical placement, never stale resize/scroll geometry.
-                if let Some(previous) = previous_placements
-                    .get(&(
-                        &key.source,
-                        placement.logical_placement_id,
-                        placement.x,
-                        placement.y,
-                    ))
-                    .copied()
-                    .filter(|previous| {
-                        if self.host.images.get(&self.image_id(&previous.asset))
-                            != Some(&image_signature_from_asset(&previous.asset))
-                        {
-                            return false;
-                        }
-                        let mut candidate = (*previous).clone();
-                        candidate.asset = key.clone();
-                        candidate == *placement
-                    })
-                {
-                    placement.asset = previous.asset.clone();
-                }
+        let previous_placements = self
+            .display_scene
+            .placements
+            .iter()
+            .map(|p| ((&p.asset.source, p.logical_placement_id, p.x, p.y), p))
+            .collect::<HashMap<_, _>>();
+        let previous_assets = self
+            .display_scene
+            .retained_assets
+            .iter()
+            .chain(self.display_scene.placements.iter().map(|p| &p.asset))
+            .filter(|key| {
+                self.host.images.get(&self.image_id(key)) == Some(&image_signature_from_asset(key))
+            })
+            .map(|key| (&key.source, key))
+            .collect::<HashMap<_, _>>();
+        for placement in &mut next.placements {
+            let key = &placement.asset;
+            if !matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
+                || self.assets.contains_key(key)
+                || self.host.images.get(&self.image_id(key))
+                    == Some(&image_signature_from_asset(key))
+            {
+                continue;
             }
-            for key in &mut next.retained_assets {
-                if matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
-                    && !self.assets.contains_key(key)
-                    && self.host.images.get(&self.image_id(key))
-                        != Some(&image_signature_from_asset(key))
-                {
-                    if let Some(previous) = previous_assets.get(&key.source) {
-                        *key = (*previous).clone();
+            // A metadata-only replacement is not visible until its upload is ACKed.
+            // Reuse only an identical placement, never stale resize/scroll geometry.
+            if let Some(previous) = previous_placements
+                .get(&(
+                    &key.source,
+                    placement.logical_placement_id,
+                    placement.x,
+                    placement.y,
+                ))
+                .copied()
+                .filter(|previous| {
+                    if self.host.images.get(&self.image_id(&previous.asset))
+                        != Some(&image_signature_from_asset(&previous.asset))
+                    {
+                        return false;
                     }
+                    let mut candidate = (*previous).clone();
+                    candidate.asset = key.clone();
+                    candidate == *placement
+                })
+            {
+                placement.asset = previous.asset.clone();
+            }
+        }
+        for key in &mut next.retained_assets {
+            if matches!(key.source, SurfaceGraphicsSource::Terminal { .. })
+                && !self.assets.contains_key(key)
+                && self.host.images.get(&self.image_id(key))
+                    != Some(&image_signature_from_asset(key))
+            {
+                if let Some(previous) = previous_assets.get(&key.source) {
+                    *key = (*previous).clone();
                 }
             }
         }
@@ -435,9 +414,7 @@ impl ClientState {
                     occlusion,
                 )
                 .map(|mut host| {
-                    if self.experimental_stable_ids {
-                        host.host_image_id = Some(self.image_id(&placement.asset));
-                    }
+                    host.host_image_id = Some(self.image_id(&placement.asset));
                     host.raw_data = self.assets.get(&placement.asset).map(Arc::clone);
                     host
                 })
@@ -463,7 +440,7 @@ pub(crate) fn native_host_image_id(scope: &str, key: &SurfaceGraphicsAssetKey) -
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     scope.hash(&mut hasher);
     key.source.hash(&mut hasher);
-    // Keep experimental native IDs separate from the direct API namespace.
+    // Keep native IDs separate from the direct API namespace.
     0x4000_0000 | (hasher.finish() as u32 & 0x1fff_ffff)
 }
 
@@ -474,7 +451,7 @@ pub(crate) fn host_image_id(scope: &str, key: &SurfaceGraphicsAssetKey) -> u32 {
     10_000 + ((hasher.finish() as u32) % 900_000)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn direct_upload_control(scope: &str, key: &SurfaceGraphicsAssetKey) -> (u32, String) {
     let image_id = host_image_id(scope, key);
     (
@@ -941,13 +918,10 @@ mod tests {
     }
 
     #[test]
-    fn experimental_stable_ids_replace_native_pixels_and_delete_on_removal() {
+    fn stable_ids_replace_native_pixels_and_delete_on_removal() {
         use crate::kitty_graphics::GraphicsOperation;
-        let mut state = ClientState {
-            experimental_stable_ids: true,
-            ..ClientState::default()
-        };
-        state.set_scope("stable-experiment");
+        let mut state = ClientState::default();
+        state.set_scope("stable-native");
         let target = SurfaceGraphicsTarget::Pane {
             pane_id: "pane".into(),
         };
@@ -996,6 +970,9 @@ mod tests {
             layer_id: "layer".into(),
         };
         assert_eq!(state.image_id(&other), host_image_id(state.scope(), &other));
+        let legacy_id = state.image_id(&other);
+        other.data_fingerprint += 1;
+        assert_ne!(state.image_id(&other), legacy_id);
         state.set_scene(SurfaceGraphicsScene::default());
         let bytes = state.encode(Visibility::Main, (0, 0), None, cell, &Occlusion::default());
         assert!(String::from_utf8(bytes)
@@ -1007,11 +984,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn native_file_adoption_keeps_previous_frame_until_replacement_ack() {
-        let mut state = ClientState {
-            experimental_stable_ids: true,
-            experimental_native_files: true,
-            ..ClientState::default()
-        };
+        let mut state = ClientState::default();
         state.set_scope("native-files");
         let image = asset(
             SurfaceGraphicsTarget::Pane {
@@ -1073,21 +1046,16 @@ mod tests {
         assert!(!placed.contains("a=t,"));
         assert_eq!(state.host.images.len(), 1);
         assert_eq!(state.native_image_ids.len(), 1);
-        state.experimental_native_files = false;
-        assert!(!state.accepts_direct_asset(&next.key, id));
-        state.experimental_stable_ids = false;
-        assert!(!state.accepts_direct_asset(&next.key, id));
-        assert!(state.accepts_direct_asset(&next.key, host_image_id(state.scope(), &next.key)));
+        // The vacated bank is reusable, but the visible bank cannot be overwritten.
+        assert!(state.accepts_direct_asset(&next.key, id));
+        assert!(!state.accepts_direct_asset(&next.key, replacement_id));
+        assert!(!state.accepts_direct_asset(&next.key, host_image_id(state.scope(), &next.key)));
     }
 
     #[cfg(unix)]
     #[test]
     fn native_replacements_use_two_ids_without_blank_pending_frames() {
-        let mut state = ClientState {
-            experimental_stable_ids: true,
-            experimental_native_files: true,
-            ..ClientState::default()
-        };
+        let mut state = ClientState::default();
         state.set_scope("double-buffer");
         let cell = HostCellSize {
             width_px: 8,
@@ -1167,11 +1135,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn native_pending_replacement_failure_and_geometry_do_not_preserve_stale_frames() {
-        let mut state = ClientState {
-            experimental_stable_ids: true,
-            experimental_native_files: true,
-            ..ClientState::default()
-        };
+        let mut state = ClientState::default();
         state.set_scope("replacement-fallback");
         let cell = HostCellSize {
             width_px: 8,
@@ -1345,7 +1309,7 @@ mod tests {
                 1,
                 vec![1, 2, 3, 4],
             );
-            let id = host_image_id("occlusion", &image.key);
+            let id = state.image_id(&image.key);
             let mut graphics = scene(image.clone(), 0, 0);
             let mut second = graphics.placements[0].clone();
             second.logical_placement_id = 4;
@@ -1446,13 +1410,8 @@ mod tests {
                 graphics.assets.extend(pane.assets);
                 graphics.placements.extend(pane.placements);
             }
-            for (covered, stable_ids) in
-                [(false, false), (true, false), (false, true), (true, true)]
-            {
-                let mut state = ClientState {
-                    experimental_stable_ids: stable_ids,
-                    ..ClientState::default()
-                };
+            for covered in [false, true] {
+                let mut state = ClientState::default();
                 state.set_scope("profile");
                 state.set_scene(graphics.clone());
                 let mut cover = Occlusion::default();
@@ -1477,17 +1436,13 @@ mod tests {
                 }
                 samples.sort_unstable();
                 eprintln!(
-                    "graphics occlusion panes={count} disjoint_overlays={covered} stable_ids={stable_ids} median_ns={} p95_ns={}",
+                    "graphics occlusion panes={count} disjoint_overlays={covered} median_ns={} p95_ns={}",
                     samples[50], samples[95]
                 );
             }
             #[cfg(unix)]
             {
-                let mut state = ClientState {
-                    experimental_stable_ids: true,
-                    experimental_native_files: true,
-                    ..ClientState::default()
-                };
+                let mut state = ClientState::default();
                 state.set_scope("swap-profile");
                 state.set_scene(graphics.clone());
                 state.encode_output(Visibility::Main, (0, 0), None, cell, &Occlusion::default());
@@ -1638,7 +1593,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn trusted_direct_asset_is_placed_without_inline_reupload() {
+    fn legacy_direct_asset_is_placed_without_inline_reupload() {
         let mut state = ClientState::default();
         state.set_scope("endpoint-a:boot-1");
         let _ = state.encode(
@@ -1651,14 +1606,18 @@ mod tests {
             },
             &Occlusion::default(),
         );
-        let image = asset(
+        let mut image = asset(
             SurfaceGraphicsTarget::Pane {
                 pane_id: "w1:p1".into(),
             },
             15,
             vec![1, 2, 3, 4],
         );
-        let image_id = host_image_id("endpoint-a:boot-1", &image.key);
+        image.key.source = SurfaceGraphicsSource::PaneLayer {
+            pane_id: "w1:p1".into(),
+            layer_id: "primary".into(),
+        };
+        let image_id = state.image_id(&image.key);
         assert!(state.trust_direct_asset(&image.key, image_id));
         let mut direct_scene = scene(image, 0, 0);
         direct_scene.assets.clear();
@@ -1692,7 +1651,7 @@ mod tests {
             18,
             vec![1, 2, 3, 4],
         );
-        let image_id = host_image_id("endpoint-a:boot-1", &image.key);
+        let image_id = state.image_id(&image.key);
         let mut direct_scene = scene(image.clone(), 0, 0);
         direct_scene.assets.clear();
         state.set_scene(direct_scene);
@@ -1726,7 +1685,7 @@ mod tests {
             19,
             vec![1, 2, 3, 4],
         );
-        let image_id = host_image_id("endpoint-a:boot-1", &image.key);
+        let image_id = state.image_id(&image.key);
         let mut active = scene(image.clone(), 0, 0);
         active.assets.clear();
         state.set_scene(active.clone());
@@ -1842,18 +1801,22 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn unclaimed_direct_asset_is_deleted_by_the_next_authoritative_scene() {
+    fn unclaimed_legacy_direct_asset_is_deleted_by_the_next_authoritative_scene() {
         let mut state = ClientState::default();
         state.set_scope("endpoint-a:boot-1");
         let _ = state.take_pending_cleanup();
-        let image = asset(
+        let mut image = asset(
             SurfaceGraphicsTarget::Pane {
                 pane_id: "w1:p1".into(),
             },
             16,
             vec![1, 2, 3, 4],
         );
-        let image_id = host_image_id("endpoint-a:boot-1", &image.key);
+        image.key.source = SurfaceGraphicsSource::PaneLayer {
+            pane_id: "w1:p1".into(),
+            layer_id: "primary".into(),
+        };
+        let image_id = state.image_id(&image.key);
         assert!(state.trust_direct_asset(&image.key, image_id));
         state.set_scene(SurfaceGraphicsScene::default());
 

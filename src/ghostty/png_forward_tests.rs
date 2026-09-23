@@ -71,6 +71,26 @@ fn native_png_render_scale_profile() {
 }
 
 #[test]
+fn normal_kitty_graphics_fully_decodes_quiet_png_uploads() {
+    let mut terminal = Terminal::new(20, 10, 0).unwrap();
+    terminal.enable_kitty_graphics().unwrap();
+    terminal.resize(20, 10, 8, 16).unwrap();
+    let before = PNG_DECODE_CALLS.get();
+    terminal.write(
+        format!(
+            "\x1b_Ga=T,f=100,i=7,c=4,r=1,q=2;{}\x1b\\",
+            base64::engine::general_purpose::STANDARD.encode(fixture())
+        )
+        .as_bytes(),
+    );
+    let placements = terminal.kitty_image_placements().unwrap();
+    assert_eq!(placements.len(), 1);
+    assert_eq!(placements[0].format, KittyImageFormat::Rgba);
+    assert_eq!(placements[0].data, vec![42; 32 * 16 * 4]);
+    assert_eq!(PNG_DECODE_CALLS.get(), before + 1);
+}
+
+#[test]
 fn quiet_png_forwarding_retains_exact_payload_without_pixel_decode() {
     let bytes = fixture();
     let mut terminal = terminal();

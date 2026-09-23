@@ -249,6 +249,7 @@ fn run_client_with_mode(
                 endpoint_keybindings,
                 loop_config.mouse_capture_active,
                 true,
+                !is_remote_client_process(),
             )
             .map_err(|error| io::Error::other(error.to_string()))?;
             if federated
@@ -367,6 +368,15 @@ fn run_client_with_mode(
     rt.shutdown_timeout(Duration::from_millis(100));
     crate::logging::shutdown("client");
     Ok(())
+}
+
+// This guards server-supplied paths only. Client-owned temporary files generated
+// from received graphics bytes remain usable for remote endpoints.
+fn server_graphics_files_allowed(
+    endpoint_id: &endpoint::ClientEndpointId,
+    remote_client_process: bool,
+) -> bool {
+    endpoint_id.is_local() && !remote_client_process
 }
 
 #[cfg(unix)]
@@ -1542,6 +1552,20 @@ async fn run_client_loop(
                         control,
                         surface_asset,
                     } => {
+                        // Never interpret an SSH server's filesystem path on this host,
+                        // including legacy peers that send files without negotiation.
+                        if !server_graphics_files_allowed(&endpoint_id, is_remote_client_process())
+                        {
+                            write_stream.send_to(
+                                &endpoint_id,
+                                &ClientMessage::GraphicsTransmissionResult {
+                                    transfer_id,
+                                    image_id,
+                                    success: false,
+                                },
+                            );
+                            continue;
+                        }
                         #[cfg(unix)]
                         {
                             let retirement = state.match_retired_direct_graphics(

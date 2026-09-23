@@ -541,6 +541,9 @@ impl HeadlessServer {
                             %error,
                             "failed to serialize retained pane surface patch"
                         );
+                        // A delta may own an encoded graphics payload that cannot be
+                        // trimmed in place. Force the bounded full-surface recovery path.
+                        client.render_state.request_repaint();
                         client.defer_full_render();
                         deferred += 1;
                         continue;

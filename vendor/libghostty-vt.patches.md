@@ -205,13 +205,12 @@ Storage reserves both encoded bytes and expected decoded size.
 This is default-off and experimental: CRC-valid corrupt compressed pixels may
 be rejected later than in normal mode, including after placement. Quiet mode
 suppresses replies, not validation semantics; this patch is not a claim of full
-protocol-equivalent transparent forwarding. Herdr enables it only with
-`HERDR_EXPERIMENTAL_KITTY_PNG_FORWARD=1`.
+protocol-equivalent transparent forwarding. Herdr exercises this mode only in
+tests; production PNG uploads retain full decoding and validation.
 
 A separate default-off snapshot callback retains host-owned immutable raw RGBA
-file backing before reading pixels. Herdr enables it only with
-`HERDR_EXPERIMENTAL_KITTY_SOURCE_FILES=1`, using Linux same-filesystem CoW
-snapshots. It never retains a mutable producer pathname. Unsupported snapshots
+file backing before reading pixels. Herdr installs this callback automatically
+on Linux, using same-filesystem CoW snapshots. It never retains a mutable producer pathname. Unsupported snapshots
 use the original loader; animation materializes pixels transactionally. Backing
 ownership and bounded reads are explicit in the embedding ABI.
 

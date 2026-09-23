@@ -4,7 +4,6 @@ use base64::Engine as _;
 fn terminal() -> Terminal {
     let mut terminal = Terminal::new(20, 10, 0).unwrap();
     terminal.enable_kitty_graphics().unwrap();
-    terminal.set_kitty_source_forwarding(true).unwrap();
     terminal.resize(20, 10, 8, 16).unwrap();
     terminal
 }
@@ -64,7 +63,7 @@ fn regular_file_placement_survives_alternate_screen_replacement() {
 
 #[cfg(target_os = "linux")]
 #[test]
-fn file_upload_retains_snapshot_when_platform_supports_clone() {
+fn file_upload_automatically_retains_snapshot_when_platform_supports_clone() {
     use std::os::fd::AsRawFd;
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);

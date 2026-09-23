@@ -3605,6 +3605,7 @@ impl PaneRuntime {
 
 #[cfg(test)]
 impl PaneRuntime {
+    #[cfg(unix)]
     pub(crate) fn test_enable_kitty_source_forwarding(&self) {
         let mut core = self.terminal.ghostty.core.lock().unwrap();
         core.terminal.enable_kitty_graphics().unwrap();

@@ -373,6 +373,15 @@ impl HeadlessServer {
     }
 
     pub(super) fn render_and_stream(&mut self) {
+        self.render_and_stream_with_graphics_limit(MAX_GRAPHICS_FRAME_SIZE);
+    }
+
+    #[cfg(all(test, unix))]
+    pub(super) fn render_and_stream_with_test_graphics_limit(&mut self, max: usize) {
+        self.render_and_stream_with_graphics_limit(max);
+    }
+
+    fn render_and_stream_with_graphics_limit(&mut self, graphics_frame_limit: usize) {
         let full_started = crate::render_prof::timer();
         let render_targets = render_targets(&self.clients, self.foreground_client_id);
 
@@ -741,7 +750,7 @@ impl HeadlessServer {
             {
                 continue;
             }
-            let native_upload =
+            let mut native_upload =
                 surface_parts
                     .as_mut()
                     .and_then(|(_, _, _, graphics, delivery, sources)| {
@@ -787,38 +796,71 @@ impl HeadlessServer {
                 continue;
             };
             let max = if has_graphics {
-                MAX_GRAPHICS_FRAME_SIZE
+                graphics_frame_limit
             } else {
                 crate::protocol::MAX_FRAME_SIZE
             };
             let mut shell_assets_deferred = false;
+            let mut suppress_impossible_asset_retry = false;
+            let mut stripped_assets = Vec::new();
             let mut serialized = match Self::frame_server_message_with_max(prepared.message(), max)
             {
                 Ok(frame) => frame,
                 Err(protocol::FramingError::Oversized { claimed, max }) if has_graphics => {
                     warn!(
                         client_id,
-                        claimed, max, "dropping graphics assets from oversized pane surface"
+                        claimed, max, "trimming inline graphics assets from oversized pane surface"
                     );
-                    if native_upload.is_some() {
-                        client.defer_full_render();
-                        continue;
-                    }
-                    if !prepared.strip_pane_surface_assets() {
-                        crate::render_prof::event("full_render.serialize_oversized");
-                        continue;
-                    }
-                    next_shell_graphics_delivery = None;
-                    shell_assets_deferred = true;
-                    match Self::frame_server_message(prepared.message()) {
-                        Ok(framed) => framed,
-                        Err(err) => {
-                            warn!(client_id, err = %err, "failed to serialize pane surface without assets");
-                            broken_clients.push(client_id);
-                            crate::render_prof::event("full_render.serialize_error");
-                            continue;
+                    let framed = loop {
+                        let Some(key) = prepared.pop_pane_surface_asset() else {
+                            break None;
+                        };
+                        stripped_assets.push(key);
+                        match Self::frame_server_message_with_max(prepared.message(), max) {
+                            Ok(framed) => break Some(framed),
+                            Err(protocol::FramingError::Oversized { .. }) => {}
+                            Err(err) => {
+                                warn!(client_id, err = %err, "failed to serialize trimmed pane surface");
+                                broken_clients.push(client_id);
+                                break None;
+                            }
                         }
+                    };
+                    let Some(framed) = framed else {
+                        if stripped_assets.is_empty() && prepared.has_queued_surface_assets() {
+                            // Delta/reuse owns an encoded payload that cannot be trimmed in
+                            // place. Drop its baseline so the bounded full-surface path runs next.
+                            client.render_state.request_repaint();
+                            client.defer_full_render();
+                        } else {
+                            crate::render_prof::event("full_render.serialize_oversized");
+                        }
+                        continue;
+                    };
+                    let made_progress =
+                        native_upload.is_some() || prepared.has_queued_surface_assets();
+                    if let Some(delivery) = next_shell_graphics_delivery.as_mut() {
+                        for key in &stripped_assets {
+                            delivery.forget_asset(key);
+                        }
+                        shell_assets_deferred = made_progress && !stripped_assets.is_empty();
                     }
+                    if let (Some((pending, _)), Some(delivery)) = (
+                        native_upload.as_mut(),
+                        next_shell_graphics_delivery.as_ref(),
+                    ) {
+                        pending.defer_inline_delivery(delivery);
+                    }
+                    if !made_progress {
+                        // Keep the asset absent from the delivery cache, but do not spin on
+                        // an identical frame when no payload can fit beside its metadata.
+                        suppress_impossible_asset_retry = true;
+                        warn!(
+                            client_id,
+                            "inline graphics asset cannot fit in a graphics frame; waiting for a later scene change"
+                        );
+                    }
+                    framed
                 }
                 Err(protocol::FramingError::Oversized { claimed, max }) => {
                     warn!(
@@ -835,9 +877,10 @@ impl HeadlessServer {
                     continue;
                 }
             };
-            let shell_graphics_pending = next_shell_graphics_delivery
-                .as_ref()
-                .is_some_and(crate::kitty_graphics::surface::DeliveryCache::has_pending);
+            let shell_graphics_pending = !suppress_impossible_asset_retry
+                && next_shell_graphics_delivery
+                    .as_ref()
+                    .is_some_and(crate::kitty_graphics::surface::DeliveryCache::has_pending);
             if let Some((_, message)) = &native_upload {
                 let Ok(file_frame) =
                     Self::frame_server_message_with_max(message, MAX_GRAPHICS_FRAME_SIZE)

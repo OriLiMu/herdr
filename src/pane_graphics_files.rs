@@ -143,7 +143,7 @@ impl FileStore {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn source_directory(&self) -> io::Result<PathBuf> {
         Ok(self.generation()?.source.clone())
     }
@@ -215,7 +215,7 @@ impl FileStore {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn is_initialized(&self) -> bool {
         self.generation.get().is_some()
     }

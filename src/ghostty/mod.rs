@@ -1093,12 +1093,7 @@ impl Terminal {
             )
             .into_result()?;
         }
-        if std::env::var("HERDR_EXPERIMENTAL_KITTY_PNG_FORWARD").as_deref() == Ok("1") {
-            self.set_kitty_png_forwarding(true)?;
-        }
-        if std::env::var("HERDR_EXPERIMENTAL_KITTY_SOURCE_FILES").as_deref() == Ok("1") {
-            self.set_kitty_source_forwarding(true)?;
-        }
+        self.set_kitty_source_forwarding(true)?;
         Ok(())
     }
 
@@ -1106,6 +1101,7 @@ impl Terminal {
         native_source::set_forwarding(self.raw, enabled)
     }
 
+    #[cfg(test)]
     fn set_kitty_png_forwarding(&mut self, enabled: bool) -> Result<(), Error> {
         unsafe {
             ffi::ghostty_terminal_set(

@@ -391,21 +391,40 @@ impl PreparedRender {
         }
     }
 
-    pub(crate) fn strip_pane_surface_assets(&mut self) -> bool {
+    pub(crate) fn has_queued_surface_assets(&self) -> bool {
+        matches!(self, Self::Semantic { queued_graphics_assets, .. } if !queued_graphics_assets.is_empty())
+    }
+
+    /// Removes the largest inline payload from a full semantic surface while
+    /// preserving placement metadata. Largest-first guarantees that a fitting
+    /// smaller asset is not discarded behind an oversized one. Equal sizes use
+    /// deterministic scene order. Encoded delta/reuse messages return `None`; callers
+    /// can invalidate that baseline and retry as a full surface.
+    pub(crate) fn pop_pane_surface_asset(&mut self) -> Option<SurfaceGraphicsAssetKey> {
         let Self::Semantic {
             message: ServerMessage::PaneSurface(surface),
             queued_graphics_assets,
             ..
         } = self
         else {
-            return false;
+            return None;
         };
-        if surface.graphics.assets.is_empty() {
-            return false;
+        let index = surface
+            .graphics
+            .assets
+            .iter()
+            .enumerate()
+            .max_by_key(|(index, asset)| (asset.data.len(), *index))?
+            .0;
+        let asset = surface.graphics.assets.remove(index);
+        let key = asset.key;
+        if let Some(index) = queued_graphics_assets
+            .iter()
+            .position(|queued| *queued == key)
+        {
+            queued_graphics_assets.remove(index);
         }
-        surface.graphics.assets.clear();
-        queued_graphics_assets.clear();
-        true
+        Some(key)
     }
 }
 

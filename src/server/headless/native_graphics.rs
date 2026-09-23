@@ -1,4 +1,4 @@
-//! Experimental decoded native exports. Deliberately independent of API slots/leases.
+//! Decoded native exports. Deliberately independent of API slots/leases.
 use super::HeadlessServer;
 use crate::kitty_graphics::surface::{DeliveryCache, SourceFiles, NATIVE_SLOT_BIT};
 use crate::pane_graphics_files::{FileStore, OwnedExport};
@@ -35,8 +35,14 @@ struct AcknowledgedSlot {
     slot: bool,
 }
 
+impl Pending {
+    pub(super) fn defer_inline_delivery(&mut self, delivery: &DeliveryCache) {
+        self.delivery = delivery.clone();
+        self.refresh_needed = true;
+    }
+}
+
 pub(super) struct NativeGraphics {
-    pub(super) enabled: bool,
     store: FileStore,
     pending: HashMap<u64, Pending>,
     disabled: HashSet<u64>,
@@ -49,7 +55,6 @@ pub(super) struct NativeGraphics {
 impl Default for NativeGraphics {
     fn default() -> Self {
         Self {
-            enabled: std::env::var("HERDR_EXPERIMENTAL_KITTY_NATIVE_FILES").as_deref() == Ok("1"),
             store: FileStore::default(),
             pending: HashMap::new(),
             disabled: HashSet::new(),
@@ -149,7 +154,7 @@ impl NativeGraphics {
             self.acknowledged_slots.remove(&client);
         }
     }
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(super) fn prepare(
         &mut self,
         client: u64,
@@ -168,8 +173,7 @@ impl NativeGraphics {
         delivery: &DeliveryCache,
         sources: &mut SourceFiles,
     ) -> Option<(Pending, ServerMessage)> {
-        if !self.enabled
-            || self.disabled.contains(&client)
+        if self.disabled.contains(&client)
             || self.pending.contains_key(&client)
             || self.pending.len() >= 8
         {
@@ -331,10 +335,6 @@ impl HeadlessServer {
         delivery: &mut DeliveryCache,
         sources: &mut SourceFiles,
     ) -> Option<(Pending, ServerMessage)> {
-        if !self.native_graphics.enabled {
-            self.materialize_native_sources(client, scene, delivery, sources);
-            return None;
-        }
         if let Some(pending) = self.native_graphics.pending.get_mut(&client) {
             pending.refresh_needed |= !scene.assets.is_empty()
                 || scene.placements != pending.scene.placements
@@ -539,10 +539,7 @@ mod tests {
 
     #[test]
     fn pending_guard_and_client_identity_are_independent() {
-        let mut state = NativeGraphics {
-            enabled: true,
-            ..Default::default()
-        };
+        let mut state = NativeGraphics::default();
         let mut scene = SurfaceGraphicsScene {
             assets: vec![asset()],
             ..Default::default()
@@ -575,10 +572,7 @@ mod tests {
 
     #[test]
     fn one_pending_per_client_and_global_count_limit() {
-        let mut state = NativeGraphics {
-            enabled: true,
-            ..Default::default()
-        };
+        let mut state = NativeGraphics::default();
         for id in 0..8 {
             let mut scene = SurfaceGraphicsScene {
                 assets: vec![asset()],

@@ -101,7 +101,6 @@ fn add_client(server: &mut HeadlessServer, id: u64) -> (Receiver<Vec<u8>>, Recei
 }
 
 fn prepare_and_commit(server: &mut HeadlessServer, id: u64) -> (PathBuf, u64, u32) {
-    server.native_graphics.enabled = true;
     let mut desired = scene();
     let (pending, message) = server
         .native_graphics
@@ -141,7 +140,6 @@ fn prepare_scene_and_commit(
     id: u64,
     mut desired: SurfaceGraphicsScene,
 ) -> (u64, u32) {
-    server.native_graphics.enabled = true;
     let (pending, message) = server
         .native_graphics
         .prepare(
@@ -379,7 +377,6 @@ fn rejected_omitted_scene_does_not_prune_visible_bank_history() {
 fn unqueued_native_prepare_does_not_advance_image_bank() {
     let mut server = test_headless_server();
     let (_control, _render) = add_client(&mut server, 7);
-    server.native_graphics.enabled = true;
     let base = crate::kitty_graphics::surface::native_host_image_id(
         &server.client_shell_boot_id,
         &scene_for(3, 200).placements[0].asset,
@@ -544,6 +541,34 @@ fn drain_native_render_messages(writer: &ClientWriter) -> Vec<ServerMessage> {
     messages
 }
 
+fn write_chunked_test_image(
+    server: &mut HeadlessServer,
+    pane: crate::layout::PaneId,
+    image_id: u32,
+    side: u32,
+    pixels: &[u8],
+) {
+    use base64::Engine as _;
+
+    let encoded = base64::engine::general_purpose::STANDARD.encode(pixels);
+    let chunks = encoded.as_bytes().chunks(4096);
+    let count = chunks.len();
+    for (index, chunk) in chunks.enumerate() {
+        let more = u8::from(index + 1 < count);
+        let mut command = if index == 0 {
+            format!(
+                "\x1b_Ga=T,f=32,t=d,i={image_id},p={image_id},s={side},v={side},c=1,r=1,q=2,m={more};"
+            )
+            .into_bytes()
+        } else {
+            format!("\x1b_Gm={more};").into_bytes()
+        };
+        command.extend_from_slice(chunk);
+        command.extend_from_slice(b"\x1b\\");
+        write_shared_test_pane(server, pane, &command);
+    }
+}
+
 #[tokio::test]
 async fn delta_encoded_inline_commit_updates_next_native_bank() {
     let (mut server, _control, _render, pane) = retained_test_server_with_control(
@@ -562,7 +587,6 @@ async fn delta_encoded_inline_commit_updates_next_native_bank() {
     };
     client.direct_graphics = true;
     client.pixel_mouse = true;
-    server.native_graphics.enabled = true;
     server.app.state.kitty_graphics_enabled = true;
 
     server.render_and_stream();
@@ -581,10 +605,11 @@ async fn delta_encoded_inline_commit_updates_next_native_bank() {
     assert!(native_started(&mut server, 1, first_transfer, first_image));
     native_result(&mut server, 1, first_transfer, first_image, true);
 
-    // Force the replacement revision through the inline path. Delta encoding
+    // Model a client without direct-file capability for this replacement.
+    // Delta encoding
     // wraps its surface in EndpointControl, but the queued asset still commits
     // bank 0 bookkeeping.
-    server.native_graphics.enabled = false;
+    server.clients.get_mut(&1).unwrap().direct_graphics = false;
     write_shared_test_pane(
         &mut server,
         pane,
@@ -601,7 +626,7 @@ async fn delta_encoded_inline_commit_updates_next_native_bank() {
         .iter()
         .any(|message| matches!(message, ServerMessage::GraphicsFile { .. })));
 
-    server.native_graphics.enabled = true;
+    server.clients.get_mut(&1).unwrap().direct_graphics = true;
     write_shared_test_pane(
         &mut server,
         pane,
@@ -626,6 +651,165 @@ async fn delta_encoded_inline_commit_updates_next_native_bank() {
 }
 
 #[tokio::test]
+async fn oversized_native_scene_queues_file_and_continues_stripped_assets_after_ack() {
+    let (mut server, _control, _render, pane) = retained_test_server_with_control(b"");
+    let writer = ClientWriter::test_paused();
+    let client = server.clients.get_mut(&1).unwrap();
+    client.writer = Some(writer.clone());
+    client.mode = ClientConnectionMode::ClientShell;
+    client.render_state =
+        crate::server::render_stream::ClientRenderState::new(RenderEncoding::SemanticFrame);
+    client.cell_size = crate::kitty_graphics::HostCellSize {
+        width_px: 10,
+        height_px: 20,
+    };
+    client.direct_graphics = true;
+    client.pixel_mouse = true;
+    server.app.state.kitty_graphics_enabled = true;
+
+    const SIDE: u32 = 128;
+    let pixels = vec![0x7f; SIDE as usize * SIDE as usize * 4];
+    for image_id in [7, 8, 9] {
+        write_chunked_test_image(&mut server, pane, image_id, SIDE, &pixels);
+    }
+
+    // The limit is deliberately above one 64 KiB asset plus metadata but below
+    // the two inline assets left after selecting one native upload.
+    server.render_and_stream_with_test_graphics_limit(100_000);
+    let first = drain_native_render_messages(&writer);
+    let first_surface = first
+        .iter()
+        .find_map(|message| match message {
+            ServerMessage::PaneSurface(surface) => Some(surface),
+            _ => None,
+        })
+        .expect("trimmed metadata scene");
+    assert_eq!(first_surface.graphics.placements.len(), 3);
+    assert_eq!(first_surface.graphics.assets.len(), 1);
+    let first_inline = first_surface.graphics.assets[0].key.clone();
+    let (transfer, image, first_native) = first
+        .iter()
+        .find_map(|message| match message {
+            ServerMessage::GraphicsFile {
+                transfer_id,
+                image_id,
+                surface_asset: Some(asset),
+                ..
+            } => Some((*transfer_id, *image_id, asset.clone())),
+            _ => None,
+        })
+        .expect("selected native asset survives oversized recovery");
+    assert_ne!(first_inline.source, first_native.source);
+    assert_eq!(server.clients[&1].deferred_render(), DeferredRender::Full);
+
+    assert!(native_started(&mut server, 1, transfer, image));
+    native_result(&mut server, 1, transfer, image, true);
+    assert_eq!(server.clients[&1].deferred_render(), DeferredRender::Full);
+
+    server.render_and_stream_with_test_graphics_limit(100_000);
+    let continuation = drain_native_render_messages(&writer);
+    let continued_asset = continuation.iter().find_map(|message| match message {
+        ServerMessage::GraphicsFile {
+            surface_asset: Some(asset),
+            ..
+        } => Some(asset),
+        ServerMessage::PaneSurface(surface) => {
+            surface.graphics.assets.first().map(|asset| &asset.key)
+        }
+        _ => None,
+    });
+    let continued_asset = continued_asset.expect("stripped asset delivered on continuation");
+    assert_ne!(continued_asset.source, first_inline.source);
+    assert_ne!(continued_asset.source, first_native.source);
+    shutdown_test_runtimes(&mut server);
+}
+
+#[tokio::test]
+async fn oversized_inline_trims_largest_and_sends_fitting_asset_without_retry_spin() {
+    let (mut server, _control, _render, pane) = retained_test_server_with_control(b"");
+    let writer = ClientWriter::test_paused();
+    let client = server.clients.get_mut(&1).unwrap();
+    client.writer = Some(writer.clone());
+    client.mode = ClientConnectionMode::ClientShell;
+    client.render_state =
+        crate::server::render_stream::ClientRenderState::new(RenderEncoding::SemanticFrame);
+    client.cell_size = crate::kitty_graphics::HostCellSize {
+        width_px: 10,
+        height_px: 20,
+    };
+    client.direct_graphics = false;
+    client.pixel_mouse = true;
+    server.app.state.kitty_graphics_enabled = true;
+
+    for (image_id, side) in [(7, 128u32), (8, 16u32)] {
+        let pixels = vec![image_id as u8; side as usize * side as usize * 4];
+        write_chunked_test_image(&mut server, pane, image_id, side, &pixels);
+    }
+
+    // Probe the exact payload size of this surface with only the small asset.
+    // Resetting the server-side delivery/baseline makes the measured render
+    // observational only; the next call exercises the production recovery path.
+    server.render_and_stream();
+    let mut measured_surface = drain_native_render_messages(&writer)
+        .into_iter()
+        .find_map(|message| match message {
+            ServerMessage::PaneSurface(surface) => Some(surface),
+            _ => None,
+        })
+        .expect("measurement surface");
+    assert_eq!(measured_surface.graphics.assets.len(), 2);
+    measured_surface
+        .graphics
+        .assets
+        .retain(|asset| asset.key.image_width == 16);
+    let exact_small_limit = HeadlessServer::frame_server_message_with_max(
+        &ServerMessage::PaneSurface(measured_surface),
+        crate::protocol::MAX_GRAPHICS_FRAME_SIZE,
+    )
+    .unwrap()
+    .len()
+    .saturating_sub(4);
+    let client = server.clients.get_mut(&1).unwrap();
+    client.render_state =
+        crate::server::render_stream::ClientRenderState::new(RenderEncoding::SemanticFrame);
+    client.shell_graphics_delivery = DeliveryCache::default();
+    client.clear_deferred_render();
+
+    // Exactly metadata plus the 1 KiB image fits; adding the 64 KiB image does not.
+    server.render_and_stream_with_test_graphics_limit(exact_small_limit);
+    let first = drain_native_render_messages(&writer);
+    let first_surface = first
+        .iter()
+        .find_map(|message| match message {
+            ServerMessage::PaneSurface(surface) => Some(surface),
+            _ => None,
+        })
+        .expect("surface with fitting inline asset");
+    assert_eq!(first_surface.graphics.assets.len(), 1);
+    assert_eq!(first_surface.graphics.assets[0].key.image_width, 16);
+    assert!(!first
+        .iter()
+        .any(|message| matches!(message, ServerMessage::GraphicsFile { .. })));
+    assert_eq!(server.clients[&1].deferred_render(), DeferredRender::Full);
+
+    // The remaining large asset cannot fit even alone. It remains absent from
+    // delivery state, but the identical impossible frame is not rescheduled forever.
+    server.render_and_stream_with_test_graphics_limit(exact_small_limit);
+    let second = drain_native_render_messages(&writer);
+    let second_surface = second
+        .iter()
+        .find_map(|message| match message {
+            ServerMessage::PaneSurface(surface) => Some(surface),
+            _ => None,
+        })
+        .expect("metadata-only bounded fallback");
+    assert!(second_surface.graphics.assets.is_empty());
+    assert!(server.clients[&1].shell_graphics_delivery.has_pending());
+    assert_eq!(server.clients[&1].deferred_render(), DeferredRender::None);
+    shutdown_test_runtimes(&mut server);
+}
+
+#[tokio::test]
 async fn quiet_native_producer_geometry_retirement_schedules_full_inline_recovery() {
     for retained in [false, true] {
         let (mut server, _control, _render, pane) = retained_test_server_with_control(
@@ -643,7 +827,6 @@ async fn quiet_native_producer_geometry_retirement_schedules_full_inline_recover
         };
         client.direct_graphics = true;
         client.pixel_mouse = true;
-        server.native_graphics.enabled = true;
         server.app.state.kitty_graphics_enabled = true;
         server.app.render_dirty.take();
         server.render_and_stream();
@@ -800,9 +983,9 @@ async fn native_file_render_scale_profile() {
                 width_px: 10,
                 height_px: 20,
             };
-            client.direct_graphics = true;
+            // Compare actual capability fallback with automatic native delivery.
+            client.direct_graphics = native;
             client.pixel_mouse = true;
-            server.native_graphics.enabled = native;
             server.app.state.kitty_graphics_enabled = true;
             server.render_and_stream();
             let baseline = drain_native_render_messages(&writer);
@@ -1007,7 +1190,6 @@ fn assert_source_upload_and_ack(
 ) {
     let mut server = test_headless_server();
     let (_control, _render) = add_client(&mut server, 7);
-    server.native_graphics.enabled = true;
     let (mut desired, mut sources) = source_backed_scene(source);
     let mut delivery = DeliveryCache::default();
     let (pending, message) = server
@@ -1064,7 +1246,7 @@ fn source_backed_native_upload_reuses_path_and_ack_preserves_image_backing() {
 }
 
 #[test]
-fn source_backed_native_disabled_materializes_exact_pixels() {
+fn source_backed_client_without_direct_support_materializes_exact_pixels() {
     let store = crate::pane_graphics_files::FileStore::native_sources();
     let pixels = [1, 2, 3, 255, 200, 100, 50, 0];
     let source = Arc::new(store.export(&pixels).unwrap());
@@ -1072,7 +1254,7 @@ fn source_backed_native_disabled_materializes_exact_pixels() {
     let expected_placements = desired.placements.clone();
     let mut server = test_headless_server();
     let (_control, _render) = add_client(&mut server, 7);
-    server.native_graphics.enabled = false;
+    server.clients.get_mut(&7).unwrap().direct_graphics = false;
     assert!(server
         .prepare_native_scene(7, &mut desired, &mut DeliveryCache::default(), &mut sources)
         .is_none());
@@ -1141,7 +1323,7 @@ async fn failed_source_read_retries_after_identical_suppression_without_producer
     client.mode = ClientConnectionMode::ClientShell;
     client.render_state =
         crate::server::render_stream::ClientRenderState::new(RenderEncoding::SemanticFrame);
-    server.native_graphics.enabled = false;
+    server.clients.get_mut(&1).unwrap().direct_graphics = false;
     server.render_and_stream();
     let mut surface = drain_native_render_messages(&writer)
         .into_iter()
