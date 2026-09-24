@@ -141,6 +141,14 @@ namespace HerdrInputGauntlet {
             if(result<0) Marshal.ThrowExceptionForHR(result);
             return checked((int)pid);
         }
+        public static int ClearClipboardForRun() {
+            if(!OpenClipboard(IntPtr.Zero)) throw new Exception("Clipboard busy; cannot start paste qualification");
+            try {
+                int formats=CountClipboardFormats();
+                if(formats!=0 && !EmptyClipboard()) throw new Exception("Clipboard clear failed");
+                return formats;
+            } finally { CloseClipboard(); }
+        }
 
         public static uint SetEmptyClipboard(IntPtr owner,string text) {
             if(owner==IntPtr.Zero) throw new Exception("Clipboard owner is required");

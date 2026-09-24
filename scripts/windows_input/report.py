@@ -424,13 +424,16 @@ def qualification_matrix(result):
             return "PARTIAL"
         if case_ids == {"mode-transitions"} and path == "direct" and statuses <= {"unsupported", "inconclusive"}:
             return "X - mOK ignored"
-        if path == "direct" and modes == {"legacy"} and statuses == {"unsupported"}:
+        if path == "direct" and modes == {"legacy"} and statuses - {"not_run"} == {"unsupported"}:
             return "X - becomes Enter" if case_ids == {"shift-enter"} else "X - loses modifier"
-        def case_passed(case_id):
-            statuses_for_case = {row.get("status") for row in matched if row.get("case") == case_id}
+        def case_passed(case_id, channel=None):
+            statuses_for_case = {row.get("status") for row in matched if row.get("case") == case_id
+                                 and (channel is None or row.get("host") == channel)}
             return "pass" in statuses_for_case or (width == 80 and path == "direct" and modes == {"legacy"}
-                                                     and case_id == "shift-enter" and statuses_for_case == {"unsupported"})
+                                                     and case_id == "shift-enter" and statuses_for_case - {"not_run"} == {"unsupported"})
         per_case_passed = all(case_passed(case_id) for case_id in case_ids)
+        if "not_run" in statuses and all(case_passed(case_id, channel) for channel in required_channels for case_id in case_ids):
+            return "PARTIAL"
         allowed = {"pass", "inconclusive"}
         if width == 80 and path == "direct" and modes == {"legacy"}:
             allowed.add("unsupported")
