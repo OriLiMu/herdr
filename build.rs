@@ -66,6 +66,7 @@ fn main() {
     command
         .arg("build")
         .arg("-Demit-lib-vt")
+        .arg("-Demit-exe=false")
         .arg(format!("-Doptimize={optimize}"))
         .arg(format!("-Dsimd={simd}"))
         .arg(format!("-Dtarget={zig_target}"))
