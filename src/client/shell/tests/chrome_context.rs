@@ -523,3 +523,77 @@ fn close_confirmation_error_becomes_client_owned_overlay_and_stable_group_close(
             if params.workspace_id == "ws_1" && params.close_group
     ));
 }
+
+#[test]
+fn running_unfocused_tab_uses_light_blue_in_tab_bar() {
+    let mut snapshot = snapshot();
+    snapshot.tabs = vec![
+        ClientShellTab {
+            tab_id: "tab_idle".into(),
+            workspace_id: "ws_1".into(),
+            number: 1,
+            label: "idle".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            agent_status: AgentStatus::Idle,
+        },
+        ClientShellTab {
+            tab_id: "tab_working".into(),
+            workspace_id: "ws_1".into(),
+            number: 2,
+            label: "working".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            agent_status: AgentStatus::Working,
+        },
+        ClientShellTab {
+            tab_id: "tab_focused_working".into(),
+            workspace_id: "ws_1".into(),
+            number: 3,
+            label: "focused".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: true,
+            agent_status: AgentStatus::Working,
+        },
+    ];
+    snapshot.focused_tab_id = Some("tab_focused_working".into());
+    snapshot.workspaces[0].active_tab_id = "tab_focused_working".into();
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot));
+    state.set_pane_surface(surface());
+    let shell = state.compose(120, 20).expect("tab bar frame");
+    let buffer = shell.to_ratatui_buffer().expect("shell buffer");
+
+    let tab_rect = |tab_id: &str| {
+        state
+            .hits
+            .tabs
+            .iter()
+            .find(|(_, id)| id == tab_id)
+            .map(|(rect, _)| *rect)
+            .expect("tab hit rect")
+    };
+
+    let idle = tab_rect("tab_idle");
+    assert_eq!(buffer[(idle.x + 1, idle.y)].fg, state.config.palette.overlay0);
+
+    let working = tab_rect("tab_working");
+    assert_eq!(
+        buffer[(working.x + 1, working.y)].bg,
+        state.config.palette.blue
+    );
+    assert_eq!(
+        buffer[(working.x + 1, working.y)].fg,
+        panel_contrast_fg(&state.config.palette)
+    );
+
+    let focused = tab_rect("tab_focused_working");
+    assert_eq!(
+        buffer[(focused.x + 1, focused.y)].bg,
+        state.config.palette.accent
+    );
+}

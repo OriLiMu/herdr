@@ -109,6 +109,18 @@ pub(crate) fn render_tab_bar(
             } else {
                 base
             }
+        } else if tab.agent_status == crate::api::schema::AgentStatus::Working {
+            // Running but not focused: light blue background so running tabs
+            // stand out from idle (grey) ones; mirrors the focused tab's
+            // accent-background treatment (contrast fg via panel_contrast_fg).
+            let base = Style::default()
+                .fg(panel_contrast_fg(palette))
+                .bg(palette.blue);
+            if tab.custom_label {
+                base.add_modifier(Modifier::BOLD)
+            } else {
+                base
+            }
         } else if tab.custom_label {
             Style::default().fg(palette.overlay1).bg(palette.surface0)
         } else {
