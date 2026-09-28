@@ -86,6 +86,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # [theme.custom]
 # sidebar_bg = "#181825"
 # active_row_bg = "#1e1e2e"
+# done_row_bg = "#d3f5d0"   # Agents sidebar: background of completed rows
+# done_row_fg = "#14421f"   # Agents sidebar: text on completed rows
 # selection_bg = "#313244"
 # panel_bg = "reset"
 # accent = "#f5c2e7"

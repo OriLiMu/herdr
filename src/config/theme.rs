@@ -104,6 +104,8 @@ pub struct CustomThemeColors {
     pub panel_bg: Option<String>,
     pub sidebar_bg: Option<String>,
     pub active_row_bg: Option<String>,
+    pub done_row_bg: Option<String>,
+    pub done_row_fg: Option<String>,
     pub selection_bg: Option<String>,
     pub surface0: Option<String>,
     pub surface1: Option<String>,
@@ -133,6 +135,8 @@ pub struct ModeThemeColors {
     pub panel_bg: Option<String>,
     pub sidebar_bg: Option<String>,
     pub active_row_bg: Option<String>,
+    pub done_row_bg: Option<String>,
+    pub done_row_fg: Option<String>,
     pub selection_bg: Option<String>,
     pub surface0: Option<String>,
     pub surface1: Option<String>,
@@ -296,6 +300,8 @@ name = "nord"
 panel_bg = "#1e1e2e"
 sidebar_bg = "#181825"
 active_row_bg = "#313244"
+done_row_bg = "#d3f5d0"
+done_row_fg = "#14421f"
 selection_bg = "#45475a"
 accent = "#ff79c6"
 red = "rgb(255, 85, 85)"
@@ -306,6 +312,8 @@ red = "rgb(255, 85, 85)"
         assert_eq!(custom.panel_bg.as_deref(), Some("#1e1e2e"));
         assert_eq!(custom.sidebar_bg.as_deref(), Some("#181825"));
         assert_eq!(custom.active_row_bg.as_deref(), Some("#313244"));
+        assert_eq!(custom.done_row_bg.as_deref(), Some("#d3f5d0"));
+        assert_eq!(custom.done_row_fg.as_deref(), Some("#14421f"));
         assert_eq!(custom.selection_bg.as_deref(), Some("#45475a"));
         assert_eq!(custom.accent.as_deref(), Some("#ff79c6"));
         assert_eq!(custom.red.as_deref(), Some("rgb(255, 85, 85)"));

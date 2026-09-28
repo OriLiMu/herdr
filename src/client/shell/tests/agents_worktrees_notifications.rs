@@ -660,6 +660,96 @@ fn muted_agent_sidebar_rows_do_not_stack_terminal_faint() {
 }
 
 #[test]
+fn done_agent_rows_use_light_green_background() {
+    let agent = |pane_id: &str, name: &str, status: AgentStatus, seq: u64, focused: bool| {
+        ClientShellAgent {
+            pane_id: pane_id.into(),
+            workspace_id: "ws_1".into(),
+            tab_id: "tab_1".into(),
+            name: Some(name.into()),
+            display_agent: None,
+            agent: Some("pi".into()),
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            agent_status: status,
+            state_change_seq: seq,
+            state_labels: Vec::new(),
+            tokens: Vec::new(),
+            focused,
+        }
+    };
+    let mut config = Config::default();
+    config.ui.status_indicators = crate::config::StatusIndicatorStyle::Symbols;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_pane_surface(surface());
+
+    // Baseline frame: both agents are working, which marks them as seen.
+    let mut baseline = snapshot();
+    baseline.agents = vec![
+        agent("pane_1", "finished", AgentStatus::Working, 1, true),
+        agent("pane_2", "running", AgentStatus::Working, 2, false),
+    ];
+    state.set_snapshot(Box::new(baseline));
+
+    // pane_1 finishes with a new state_change_seq: unacknowledged completions
+    // project as Done in the Agents sidebar.
+    let mut completed = snapshot();
+    completed.revision = 2;
+    completed.agents = vec![
+        // Focused done rows keep the done background too.
+        agent("pane_1", "finished", AgentStatus::Idle, 3, true),
+        agent("pane_2", "running", AgentStatus::Working, 2, false),
+    ];
+    state.set_snapshot(Box::new(completed));
+    assert_eq!(
+        state.snapshot.as_ref().unwrap().agents[0].agent_status,
+        AgentStatus::Done,
+        "test setup: pane_1 should project as Done"
+    );
+
+    let frame = state.compose(106, 30).expect("agent sidebar frame");
+    let buffer = frame.to_ratatui_buffer().expect("agent sidebar buffer");
+    let palette = &state.config.palette;
+    let row_hit = |pane_id: &str| {
+        state
+            .hits
+            .agents
+            .iter()
+            .find(|hit| hit.1 == pane_id)
+            .unwrap_or_else(|| panic!("agent row hit for {pane_id}"))
+            .0
+    };
+
+    let done_row = row_hit("pane_1");
+    for x in done_row.x..done_row.right() {
+        assert_eq!(
+            buffer[(x, done_row.y)].bg,
+            palette.done_row_bg,
+            "done agent row cell ({x}, {}) should use done_row_bg",
+            done_row.y
+        );
+    }
+    let (icon_x, icon_y) = cell_symbol_position(&frame, done_row, "\u{2713}");
+    assert_eq!(
+        buffer.cell((icon_x, icon_y)).expect("done status icon").fg,
+        palette.done_row_fg,
+        "done status icon should use done_row_fg on the light-green background"
+    );
+
+    let working_row = row_hit("pane_2");
+    assert_eq!(
+        buffer[(working_row.x + 1, working_row.y)].bg,
+        ratatui::style::Color::Reset
+    );
+    assert_ne!(
+        buffer[(working_row.x + 1, working_row.y)].bg,
+        palette.done_row_bg,
+        "working agent rows must not get the done background"
+    );
+}
+
+#[test]
 fn workspace_state_text_does_not_stack_terminal_faint() {
     use crate::config::SpaceSidebarToken;
 

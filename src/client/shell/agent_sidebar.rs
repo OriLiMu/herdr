@@ -325,12 +325,22 @@ pub(super) fn render_agent_row(
     config: &ClientShellConfig,
 ) {
     let palette = &config.palette;
-    let row_style = if row.focused {
+    // Completed tasks get a dedicated light-green row background (and a dark
+    // foreground so text stays readable on it). Configurable via
+    // `[theme.custom] done_row_bg / done_row_fg`.
+    let done = matches!(row.status, crate::api::schema::AgentStatus::Done);
+    let row_style = if done {
+        Style::default().bg(palette.done_row_bg)
+    } else if row.focused {
         Style::default().bg(palette.active_row_bg)
     } else {
         Style::default()
     };
-    let name_style = if row.focused {
+    let name_style = if done {
+        Style::default()
+            .fg(palette.done_row_fg)
+            .add_modifier(Modifier::BOLD)
+    } else if row.focused {
         Style::default()
             .fg(palette.text)
             .add_modifier(Modifier::BOLD)
@@ -339,12 +349,17 @@ pub(super) fn render_agent_row(
             .fg(palette.subtext0)
             .add_modifier(Modifier::BOLD)
     };
-    let status_style = Style::default().fg(status_color(row.status, palette));
-    let secondary = Style::default().fg(palette.overlay0);
-    let icon = (
-        status_icon(row.status, config.status_indicators),
-        Style::default().fg(status_color(row.status, palette)),
-    );
+    let status_style = if done {
+        Style::default().fg(palette.done_row_fg)
+    } else {
+        Style::default().fg(status_color(row.status, palette))
+    };
+    let secondary = if done {
+        Style::default().fg(palette.done_row_fg)
+    } else {
+        Style::default().fg(palette.overlay0)
+    };
+    let icon = (status_icon(row.status, config.status_indicators), status_style);
     let rows = if row.rows.is_empty() {
         vec![vec![crate::ui::ResolvedToken {
             kind: crate::ui::ResolvedTokenKind::StateIcon,
