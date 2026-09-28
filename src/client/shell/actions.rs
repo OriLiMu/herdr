@@ -1050,12 +1050,18 @@ impl ClientShellState {
                 }))
             }
             KeybindAction::LastPane => {
-                let pane_id = self.previous_pane_id.as_ref()?;
-                if Some(pane_id.as_str()) == focused_pane.as_deref()
-                    || !snapshot.panes.iter().any(|pane| &pane.pane_id == pane_id)
-                {
-                    return None;
-                }
+                // Walk the focus history back, skipping panes that have since
+                // been closed, and jump to the nearest still-alive one.
+                let pane_id = self
+                    .pane_focus_history
+                    .iter()
+                    .find(|pane_id| {
+                        Some(pane_id.as_str()) != focused_pane.as_deref()
+                            && snapshot
+                                .panes
+                                .iter()
+                                .any(|pane| &pane.pane_id == *pane_id)
+                    })?;
                 Some(Method::PaneFocus(PaneTarget {
                     pane_id: pane_id.clone(),
                 }))

@@ -879,7 +879,9 @@ pub(crate) struct ClientShellState {
     pub(super) navigate_workspace_id: Option<WorkspaceNavigationTarget>,
     pub(super) reveal_navigation_workspace: bool,
     pub(super) overlay: Option<ClientShellOverlay>,
-    pub(super) previous_pane_id: Option<String>,
+    /// Most-recently-focused pane ids, head first. Dead panes are pruned on
+    /// every snapshot so `LastPane` can walk back past closed panes.
+    pub(super) pane_focus_history: Vec<String>,
     pub(super) pane_mouse_gesture: Option<ClientPaneMouseGesture>,
     pub(super) link_hover: Option<super::link_hover::LinkHover>,
     pub(super) url_click_consumes_until_up: bool,
@@ -1041,7 +1043,7 @@ impl ClientShellState {
             navigate_workspace_id: None,
             reveal_navigation_workspace: false,
             overlay,
-            previous_pane_id: None,
+            pane_focus_history: Vec::new(),
             pane_mouse_gesture: None,
             link_hover: None,
             url_click_consumes_until_up: false,
@@ -1196,6 +1198,29 @@ impl ClientShellState {
         }
     }
 
+    /// Track pane focus as an MRU history (head = most recent) so `LastPane`
+    /// can walk back past panes that were closed after they were focused.
+    fn track_pane_focus_history(&mut self, snapshot: &ClientShellSnapshot) {
+        self.pane_focus_history
+            .retain(|pane_id| snapshot.panes.iter().any(|pane| &pane.pane_id == pane_id));
+        let Some(previous) = self
+            .snapshot
+            .as_deref()
+            .and_then(|current| current.focused_pane_id.clone())
+            .filter(|previous| Some(previous.as_str()) != snapshot.focused_pane_id.as_deref())
+        else {
+            return;
+        };
+        if let Some(focused) = snapshot.focused_pane_id.as_deref() {
+            self.pane_focus_history.retain(|pane_id| pane_id != focused);
+            self.pane_focus_history.insert(0, focused.to_string());
+        }
+        if !self.pane_focus_history.contains(&previous) {
+            self.pane_focus_history.push(previous);
+        }
+        self.pane_focus_history.truncate(64);
+    }
+
     pub(super) fn reset_endpoint_projection(&mut self) {
         self.hits = ShellHitMap::default();
         self.pane_surface = None;
@@ -1233,7 +1258,7 @@ impl ClientShellState {
             .config
             .startup_onboarding
             .then_some(ClientShellOverlay::Onboarding);
-        self.previous_pane_id = None;
+        self.pane_focus_history.clear();
         self.pane_mouse_gesture = None;
         self.link_hover = None;
         self.url_click_consumes_until_up = false;
@@ -1344,13 +1369,8 @@ impl ClientShellState {
                 .flatten();
             self.reset_endpoint_projection();
             self.navigate_workspace_id = preview;
-        } else if let Some(previous) = self
-            .snapshot
-            .as_deref()
-            .and_then(|current| current.focused_pane_id.as_ref())
-            .filter(|previous| Some(previous.as_str()) != snapshot.focused_pane_id.as_deref())
-        {
-            self.previous_pane_id = Some(previous.clone());
+        } else {
+            self.track_pane_focus_history(&snapshot);
         }
         if snapshot_keybindings_changed {
             if let Err(err) = self.config.apply_snapshot_keybindings(

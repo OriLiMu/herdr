@@ -430,6 +430,56 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
 }
 
 #[test]
+fn last_pane_skips_panes_closed_after_being_focused() {
+    let mut initial = snapshot();
+    let mut second = initial.panes[0].clone();
+    second.pane_id = "pane_2".into();
+    second.focused = false;
+    initial.panes.push(second);
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(initial.clone()));
+
+    // Focus walks pane_1 -> pane_2 -> pane_3.
+    let mut focused_second = initial;
+    focused_second.revision = 2;
+    focused_second.focused_pane_id = Some("pane_2".into());
+    focused_second.panes[0].focused = false;
+    focused_second.panes[1].focused = true;
+    let mut third = focused_second.panes[1].clone();
+    third.pane_id = "pane_3".into();
+    third.focused = false;
+    focused_second.panes.push(third);
+    state.set_snapshot(Box::new(focused_second.clone()));
+
+    let mut focused_third = focused_second;
+    focused_third.revision = 3;
+    focused_third.focused_pane_id = Some("pane_3".into());
+    focused_third.panes[1].focused = false;
+    focused_third.panes[2].focused = true;
+    state.set_snapshot(Box::new(focused_third.clone()));
+
+    // Close pane_2 while pane_3 stays focused; LastPane must fall back to
+    // pane_1, skipping the now-dead pane_2.
+    let mut closed = focused_third;
+    closed.revision = 4;
+    closed.panes.remove(1);
+    state.set_snapshot(Box::new(closed));
+
+    let mut last = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::LastPane),
+        &mut last,
+    );
+    let [ClientShellAction::Endpoint { request, .. }] = &last.actions[..] else {
+        panic!("last pane should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::PaneFocus(target) if target.pane_id == "pane_1"
+    ));
+}
+
+#[test]
 fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
     let mut projected = snapshot();
     let mut second_pane = projected.panes[0].clone();
