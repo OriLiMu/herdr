@@ -353,8 +353,19 @@ pub(super) fn render_agent_row(
     } else {
         row.rows.clone()
     };
+    // 后续行与第一行中首个非状态图标 token（即标签名称）的起始列对齐：
+    // 缩进 1 列 + 状态图标显示宽度 + 图标后的 1 列分隔空格。
+    let label_indent = if rows.first().is_some_and(|first| {
+        first
+            .iter()
+            .any(|token| matches!(token.kind, crate::ui::ResolvedTokenKind::StateIcon))
+    }) {
+        1 + display_width(icon.0) + 1
+    } else {
+        3
+    };
     for (index, tokens) in rows.iter().take(rect.height as usize).enumerate() {
-        let indent = if index == 0 { 1 } else { 3 };
+        let indent = if index == 0 { 1 } else { label_indent };
         let mut spans = vec![ratatui::text::Span::raw(" ".repeat(indent))];
         spans.extend(crate::ui::resolved_token_spans(
             tokens,
