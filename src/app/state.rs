@@ -45,10 +45,6 @@ pub struct Palette {
     pub done_row_bg: Color,
     /// Foreground text for completed (done) rows in the Agents sidebar.
     pub done_row_fg: Color,
-    /// Background for in-progress (working) rows in the Agents sidebar.
-    pub working_row_bg: Color,
-    /// Foreground text for in-progress (working) rows in the Agents sidebar.
-    pub working_row_fg: Color,
     /// Background for the Navigate-mode cursor row in the sidebar.
     pub selection_bg: Color,
     /// Subtle surface background for selected/focused items.
@@ -91,8 +87,6 @@ impl Palette {
             active_row_bg: Color::Rgb(30, 30, 46),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(49, 50, 68),
             surface0: Color::Rgb(49, 50, 68),
             surface1: Color::Rgb(69, 71, 90),
@@ -120,8 +114,6 @@ impl Palette {
             active_row_bg: Color::Rgb(230, 233, 239),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(189, 208, 245),
             surface0: Color::Rgb(204, 208, 218),
             surface1: Color::Rgb(188, 192, 204),
@@ -149,8 +141,6 @@ impl Palette {
             active_row_bg: Color::DarkGray,
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Reset,
             surface0: Color::Reset,
             surface1: Color::DarkGray,
@@ -178,8 +168,6 @@ impl Palette {
             active_row_bg: Color::Rgb(35, 38, 54),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(45, 54, 80),
             surface0: Color::Rgb(36, 40, 59),
             surface1: Color::Rgb(65, 72, 104),
@@ -207,8 +195,6 @@ impl Palette {
             active_row_bg: Color::Rgb(210, 211, 218),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(182, 202, 231),
             surface0: Color::Rgb(196, 200, 218),
             surface1: Color::Rgb(168, 174, 203),
@@ -236,8 +222,6 @@ impl Palette {
             active_row_bg: Color::Rgb(55, 60, 82),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(70, 63, 93),
             surface0: Color::Rgb(68, 71, 90),
             surface1: Color::Rgb(98, 114, 164),
@@ -265,8 +249,6 @@ impl Palette {
             active_row_bg: Color::Rgb(67, 76, 94),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(64, 80, 93),
             surface0: Color::Rgb(59, 66, 82),
             surface1: Color::Rgb(67, 76, 94),
@@ -294,8 +276,6 @@ impl Palette {
             active_row_bg: Color::Rgb(50, 49, 48),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(75, 63, 39),
             surface0: Color::Rgb(60, 56, 54),
             surface1: Color::Rgb(80, 73, 69),
@@ -323,8 +303,6 @@ impl Palette {
             active_row_bg: Color::Rgb(242, 229, 188),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(235, 219, 178),
             surface0: Color::Rgb(235, 219, 178),
             surface1: Color::Rgb(213, 196, 161),
@@ -352,8 +330,6 @@ impl Palette {
             active_row_bg: Color::Rgb(49, 54, 64),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(51, 70, 89),
             surface0: Color::Rgb(44, 49, 58),
             surface1: Color::Rgb(62, 68, 81),
@@ -381,8 +357,6 @@ impl Palette {
             active_row_bg: Color::Rgb(216, 219, 226),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(205, 219, 248),
             surface0: Color::Rgb(240, 240, 241),
             surface1: Color::Rgb(229, 229, 230),
@@ -410,8 +384,6 @@ impl Palette {
             active_row_bg: Color::Rgb(22, 75, 87),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(8, 62, 85),
             surface0: Color::Rgb(7, 54, 66),
             surface1: Color::Rgb(88, 110, 117),
@@ -439,8 +411,6 @@ impl Palette {
             active_row_bg: Color::Rgb(238, 232, 213),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(201, 220, 223),
             surface0: Color::Rgb(238, 232, 213),
             surface1: Color::Rgb(147, 161, 161),
@@ -468,8 +438,6 @@ impl Palette {
             active_row_bg: Color::Rgb(54, 54, 70),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(50, 56, 75),
             surface0: Color::Rgb(42, 42, 55),
             surface1: Color::Rgb(54, 54, 70),
@@ -497,8 +465,6 @@ impl Palette {
             active_row_bg: Color::Rgb(213, 206, 163),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(220, 213, 172),
             surface0: Color::Rgb(220, 213, 172),
             surface1: Color::Rgb(201, 203, 209),
@@ -526,8 +492,6 @@ impl Palette {
             active_row_bg: Color::Rgb(38, 35, 58),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(59, 52, 75),
             surface0: Color::Rgb(31, 29, 46),
             surface1: Color::Rgb(38, 35, 58),
@@ -555,8 +519,6 @@ impl Palette {
             active_row_bg: Color::Rgb(227, 217, 207),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(242, 233, 225),
             surface0: Color::Rgb(242, 233, 225),
             surface1: Color::Rgb(255, 250, 243),
@@ -584,8 +546,6 @@ impl Palette {
             active_row_bg: Color::Rgb(16, 16, 16),
             done_row_bg: Color::Rgb(211, 245, 208),
             done_row_fg: Color::Rgb(20, 66, 31),
-            working_row_bg: Color::Rgb(255, 176, 58),
-            working_row_fg: Color::Rgb(74, 42, 0),
             selection_bg: Color::Rgb(35, 35, 35),
             surface0: Color::Rgb(35, 35, 35),
             surface1: Color::Rgb(40, 40, 40),
@@ -649,12 +609,6 @@ impl Palette {
         }
         if let Some(c) = &custom.done_row_fg {
             self.done_row_fg = parse_color(c);
-        }
-        if let Some(c) = &custom.working_row_bg {
-            self.working_row_bg = parse_color(c);
-        }
-        if let Some(c) = &custom.working_row_fg {
-            self.working_row_fg = parse_color(c);
         }
         if let Some(c) = &custom.selection_bg {
             self.selection_bg = parse_color(c);
@@ -723,12 +677,6 @@ impl Palette {
         }
         if let Some(c) = &custom.done_row_fg {
             self.done_row_fg = parse_color(c);
-        }
-        if let Some(c) = &custom.working_row_bg {
-            self.working_row_bg = parse_color(c);
-        }
-        if let Some(c) = &custom.working_row_fg {
-            self.working_row_fg = parse_color(c);
         }
         if let Some(c) = &custom.selection_bg {
             self.selection_bg = parse_color(c);

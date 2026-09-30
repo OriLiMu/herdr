@@ -325,16 +325,12 @@ pub(super) fn render_agent_row(
     config: &ClientShellConfig,
 ) {
     let palette = &config.palette;
-    // Completed tasks get a dedicated row background (and a dark foreground so
-    // text stays readable on it); in-progress tasks get an orange one.
-    // Configurable via `[theme.custom] done_row_bg / done_row_fg` and
-    // `working_row_bg / working_row_fg`.
+    // Completed tasks get a dedicated light-green row background (and a dark
+    // foreground so text stays readable on it). Configurable via
+    // `[theme.custom] done_row_bg / done_row_fg`.
     let done = matches!(row.status, crate::api::schema::AgentStatus::Done);
-    let working = matches!(row.status, crate::api::schema::AgentStatus::Working);
     let row_style = if done {
         Style::default().bg(palette.done_row_bg)
-    } else if working {
-        Style::default().bg(palette.working_row_bg)
     } else if row.focused {
         Style::default().bg(palette.active_row_bg)
     } else {
@@ -343,10 +339,6 @@ pub(super) fn render_agent_row(
     let name_style = if done {
         Style::default()
             .fg(palette.done_row_fg)
-            .add_modifier(Modifier::BOLD)
-    } else if working {
-        Style::default()
-            .fg(palette.working_row_fg)
             .add_modifier(Modifier::BOLD)
     } else if row.focused {
         Style::default()
@@ -359,15 +351,11 @@ pub(super) fn render_agent_row(
     };
     let status_style = if done {
         Style::default().fg(palette.done_row_fg)
-    } else if working {
-        Style::default().fg(palette.working_row_fg)
     } else {
         Style::default().fg(status_color(row.status, palette))
     };
     let secondary = if done {
         Style::default().fg(palette.done_row_fg)
-    } else if working {
-        Style::default().fg(palette.working_row_fg)
     } else {
         Style::default().fg(palette.overlay0)
     };
