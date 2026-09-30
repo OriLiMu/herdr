@@ -1602,3 +1602,80 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
     assert!(state.visible_notification.is_none());
     assert_eq!(state.pending_notifications.len(), 1);
 }
+
+#[test]
+fn hidden_spaces_section_gives_the_whole_sidebar_to_agents() {
+    let mut config = Config::default();
+    config.ui.show_spaces_section = false;
+    config.ui.status_indicators = crate::config::StatusIndicatorStyle::Symbols;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    let mut frame_snapshot = snapshot();
+    frame_snapshot.agents = vec![ClientShellAgent {
+        pane_id: "pane_1".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("top agent".into()),
+        display_agent: None,
+        agent: Some("pi".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: crate::api::schema::AgentStatus::Idle,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: false,
+    }];
+    state.set_snapshot(Box::new(frame_snapshot));
+    state.set_pane_surface(surface());
+
+    let frame = state.compose(106, 30).expect("sidebar frame");
+    let buffer = frame.to_ratatui_buffer().expect("sidebar buffer");
+    let text = frame
+        .cells
+        .chunks(frame.width as usize)
+        .map(|row| row.iter().map(|cell| cell.symbol.as_str()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        !text.contains("spaces"),
+        "spaces header must not render when hidden: {text}"
+    );
+    assert!(
+        text.contains("agents"),
+        "agents header should stay visible: {text}"
+    );
+    assert!(
+        state.hits.workspaces.is_empty(),
+        "no workspace hit targets may remain"
+    );
+    assert_eq!(
+        state.hits.new_workspace,
+        ratatui::layout::Rect::default(),
+        "new-workspace button must be gone"
+    );
+    assert_eq!(
+        state.hits.sidebar_section_divider,
+        ratatui::layout::Rect::default(),
+        "section divider must be gone"
+    );
+    assert!(
+        !state.hits.agents.is_empty(),
+        "agent rows should fill the sidebar"
+    );
+    // The agent panel must start at the sidebar's top row: its own header
+    // is a divider line + "agents" title + one blank row, so the first
+    // agent row lands on row 3 (instead of being pushed down by Spaces).
+    let agent_top = state
+        .hits
+        .agents
+        .iter()
+        .map(|(rect, _)| rect.y)
+        .min()
+        .expect("agent hits");
+    assert_eq!(
+        agent_top, 3,
+        "agents panel should start at the top of the sidebar"
+    );
+}

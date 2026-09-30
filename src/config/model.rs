@@ -962,6 +962,8 @@ pub struct UiConfig {
     _legacy_agent_panel_scope: Option<LegacyAgentPanelScopeConfig>,
     /// Agent status indicator style. Saved values are "dots" or "symbols". Default: "dots".
     pub status_indicators: StatusIndicatorStyle,
+    /// Show the Spaces section at the top of the sidebar. Default: true.
+    pub show_spaces_section: bool,
     /// Expanded sidebar row composition.
     pub sidebar: SidebarConfig,
     /// Accent color for highlights, borders, and navigation UI.
@@ -1186,6 +1188,7 @@ impl Default for UiConfig {
             agent_panel_sort: AgentPanelSortConfig::Spaces,
             _legacy_agent_panel_scope: None,
             status_indicators: StatusIndicatorStyle::Dots,
+            show_spaces_section: true,
             sidebar: SidebarConfig::default(),
             accent: "cyan".into(),
             toast: ToastConfig::default(),

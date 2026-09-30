@@ -199,6 +199,56 @@ pub(crate) fn render_sidebar(
         crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
     hits.sidebar_section_divider =
         crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+    if !config.show_spaces_section {
+        // [ui] show_spaces_section = false: give the whole sidebar to the
+        // Agents panel and leave no interactive Spaces hits behind.
+        hits.sidebar_section_divider = Rect::default();
+        hits.workspace_body = Rect::default();
+        hits.workspaces.clear();
+        hits.workspace_scrollbar = Rect::default();
+        hits.workspace_scroll_metrics = None;
+        hits.workspace_max_scroll = 0;
+        hits.new_workspace = Rect::default();
+        hits.global_launcher = Rect::default();
+        super::render_agent_panel(buffer, area, snapshot, config, state.agent_scroll, hits);
+    } else {
+        render_spaces_and_agents(
+            buffer,
+            workspace_area,
+            detail_area,
+            snapshot,
+            config,
+            state,
+            hits,
+        );
+    }
+    hits.sidebar_toggle = Rect::new(
+        area.right().saturating_sub(2),
+        area.bottom().saturating_sub(1),
+        u16::from(area.width > 1),
+        u16::from(area.height > 0),
+    );
+    put_text(
+        buffer,
+        hits.sidebar_toggle.x,
+        hits.sidebar_toggle.y,
+        hits.sidebar_toggle.width,
+        "«",
+        Style::default().fg(palette.overlay0),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_spaces_and_agents(
+    buffer: &mut Buffer,
+    workspace_area: Rect,
+    detail_area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    state: &mut ShellRenderState<'_>,
+    hits: &mut ShellHitMap,
+) {
+    let palette = &config.palette;
     put_text(
         buffer,
         workspace_area.x,
@@ -421,21 +471,6 @@ pub(crate) fn render_sidebar(
         config,
         state.agent_scroll,
         hits,
-    );
-
-    hits.sidebar_toggle = Rect::new(
-        area.right().saturating_sub(2),
-        area.bottom().saturating_sub(1),
-        u16::from(area.width > 1),
-        u16::from(area.height > 0),
-    );
-    put_text(
-        buffer,
-        hits.sidebar_toggle.x,
-        hits.sidebar_toggle.y,
-        hits.sidebar_toggle.width,
-        "«",
-        Style::default().fg(palette.overlay0),
     );
 }
 
