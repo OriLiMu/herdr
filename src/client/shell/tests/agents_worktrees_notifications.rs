@@ -738,14 +738,93 @@ fn done_agent_rows_use_light_green_background() {
     );
 
     let working_row = row_hit("pane_2");
-    assert_eq!(
-        buffer[(working_row.x + 1, working_row.y)].bg,
-        ratatui::style::Color::Reset
-    );
+    for x in working_row.x..working_row.right() {
+        assert_eq!(
+            buffer[(x, working_row.y)].bg,
+            palette.working_row_bg,
+            "working agent row cell ({x}, {}) should use working_row_bg",
+            working_row.y
+        );
+    }
     assert_ne!(
         buffer[(working_row.x + 1, working_row.y)].bg,
         palette.done_row_bg,
         "working agent rows must not get the done background"
+    );
+}
+
+#[test]
+fn working_agent_rows_use_orange_background() {
+    let agent = |pane_id: &str, name: &str, status: AgentStatus, seq: u64, focused: bool| {
+        ClientShellAgent {
+            pane_id: pane_id.into(),
+            workspace_id: "ws_1".into(),
+            tab_id: "tab_1".into(),
+            name: Some(name.into()),
+            display_agent: None,
+            agent: Some("pi".into()),
+            title: None,
+            terminal_title: None,
+            terminal_title_stripped: None,
+            agent_status: status,
+            state_change_seq: seq,
+            state_labels: Vec::new(),
+            tokens: Vec::new(),
+            focused,
+        }
+    };
+    let mut config = Config::default();
+    config.ui.status_indicators = crate::config::StatusIndicatorStyle::Symbols;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_pane_surface(surface());
+
+    let mut frame_snapshot = snapshot();
+    frame_snapshot.agents = vec![
+        // Working wins over the focused-row background.
+        agent("pane_1", "busy", AgentStatus::Working, 1, true),
+        agent("pane_2", "resting", AgentStatus::Idle, 2, false),
+    ];
+    state.set_snapshot(Box::new(frame_snapshot));
+
+    let frame = state.compose(106, 30).expect("agent sidebar frame");
+    let buffer = frame.to_ratatui_buffer().expect("agent sidebar buffer");
+    let palette = &state.config.palette;
+    let row_hit = |pane_id: &str| {
+        state
+            .hits
+            .agents
+            .iter()
+            .find(|hit| hit.1 == pane_id)
+            .unwrap_or_else(|| panic!("agent row hit for {pane_id}"))
+            .0
+    };
+
+    let working_row = row_hit("pane_1");
+    for x in working_row.x..working_row.right() {
+        assert_eq!(
+            buffer[(x, working_row.y)].bg,
+            palette.working_row_bg,
+            "working agent row cell ({x}, {}) should use working_row_bg",
+            working_row.y
+        );
+    }
+    assert_ne!(
+        buffer[(working_row.x, working_row.y)].bg,
+        palette.active_row_bg,
+        "working rows should not fall back to the focused-row background"
+    );
+    let (icon_x, icon_y) = cell_symbol_position(&frame, working_row, "\u{1f6e0}");
+    assert_eq!(
+        buffer.cell((icon_x, icon_y)).expect("working status icon").fg,
+        palette.working_row_fg,
+        "working status icon should use working_row_fg on the orange background"
+    );
+
+    let idle_row = row_hit("pane_2");
+    assert_eq!(
+        buffer[(idle_row.x + 1, idle_row.y)].bg,
+        ratatui::style::Color::Reset,
+        "idle agent rows keep the default background"
     );
 }
 
