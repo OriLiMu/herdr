@@ -12,6 +12,7 @@ fn tab_overflow_controls_scroll_the_client_owned_tab_bar() {
         zoomed: false,
         focused: false,
         agent_status: AgentStatus::Idle,
+        first_agent_status: AgentStatus::Idle,
     }));
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot));
@@ -71,6 +72,7 @@ fn focused_last_overflow_tab_shows_its_full_label() {
             zoomed: false,
             focused: index == 7,
             agent_status: AgentStatus::Idle,
+            first_agent_status: AgentStatus::Idle,
         })
         .collect();
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
@@ -537,6 +539,7 @@ fn running_unfocused_tab_uses_light_blue_in_tab_bar() {
             zoomed: false,
             focused: false,
             agent_status: AgentStatus::Idle,
+            first_agent_status: AgentStatus::Idle,
         },
         ClientShellTab {
             tab_id: "tab_working".into(),
@@ -547,6 +550,7 @@ fn running_unfocused_tab_uses_light_blue_in_tab_bar() {
             zoomed: false,
             focused: false,
             agent_status: AgentStatus::Working,
+            first_agent_status: AgentStatus::Working,
         },
         ClientShellTab {
             tab_id: "tab_focused_working".into(),
@@ -557,6 +561,7 @@ fn running_unfocused_tab_uses_light_blue_in_tab_bar() {
             zoomed: false,
             focused: true,
             agent_status: AgentStatus::Working,
+            first_agent_status: AgentStatus::Working,
         },
     ];
     snapshot.focused_tab_id = Some("tab_focused_working".into());
@@ -579,21 +584,174 @@ fn running_unfocused_tab_uses_light_blue_in_tab_bar() {
     };
 
     let idle = tab_rect("tab_idle");
-    assert_eq!(buffer[(idle.x + 1, idle.y)].fg, state.config.palette.overlay0);
+    assert_eq!(
+        buffer[(idle.x + 1, idle.y)].bg,
+        state.config.palette.tab_idle_bg
+    );
+    assert_eq!(
+        buffer[(idle.x + 1, idle.y)].fg,
+        state.config.palette.tab_status_fg
+    );
 
     let working = tab_rect("tab_working");
     assert_eq!(
         buffer[(working.x + 1, working.y)].bg,
-        state.config.palette.blue
+        state.config.palette.tab_working_bg
     );
     assert_eq!(
         buffer[(working.x + 1, working.y)].fg,
-        panel_contrast_fg(&state.config.palette)
+        state.config.palette.tab_status_fg
     );
 
     let focused = tab_rect("tab_focused_working");
     assert_eq!(
         buffer[(focused.x + 1, focused.y)].bg,
         state.config.palette.accent
+    );
+}
+
+#[test]
+fn tab_bar_labels_show_status_suffix_and_focus_asterisk() {
+    let mut snapshot = snapshot();
+    snapshot.tabs = vec![
+        ClientShellTab {
+            tab_id: "tab_working".into(),
+            workspace_id: "ws_1".into(),
+            number: 1,
+            label: "A".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            agent_status: AgentStatus::Working,
+            first_agent_status: AgentStatus::Working,
+        },
+        ClientShellTab {
+            tab_id: "tab_focused_idle".into(),
+            workspace_id: "ws_1".into(),
+            number: 2,
+            label: "B".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: true,
+            agent_status: AgentStatus::Idle,
+            first_agent_status: AgentStatus::Idle,
+        },
+        ClientShellTab {
+            tab_id: "tab_done".into(),
+            workspace_id: "ws_1".into(),
+            number: 3,
+            label: "C".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            agent_status: AgentStatus::Done,
+            first_agent_status: AgentStatus::Done,
+        },
+        ClientShellTab {
+            tab_id: "tab_plain".into(),
+            workspace_id: "ws_1".into(),
+            number: 4,
+            label: "D".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            agent_status: AgentStatus::Unknown,
+            first_agent_status: AgentStatus::Unknown,
+        },
+    ];
+    snapshot.focused_tab_id = Some("tab_focused_idle".into());
+    snapshot.workspaces[0].active_tab_id = "tab_focused_idle".into();
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot));
+    state.set_pane_surface(surface());
+    let shell = state.compose(140, 20).expect("tab bar frame");
+    let buffer = shell.to_ratatui_buffer().expect("shell buffer");
+
+    let tab_rect = |tab_id: &str| {
+        state
+            .hits
+            .tabs
+            .iter()
+            .find(|(_, id)| id == tab_id)
+            .map(|(rect, _)| *rect)
+            .expect("tab hit rect")
+    };
+
+    let row_text = |rect: ratatui::layout::Rect| {
+        // Wide (CJK) glyphs occupy two cells and the filler cell reads as a
+        // space, so drop spaces before comparing labels.
+        (rect.x..rect.right())
+            .map(|x| buffer[(x, rect.y)].symbol().to_string())
+            .collect::<String>()
+            .replace(' ', "")
+    };
+
+    assert_eq!(row_text(tab_rect("tab_working")).trim(), "A(工作中)");
+    // Focused tab shows the asterisk only, no status text.
+    assert_eq!(row_text(tab_rect("tab_focused_idle")).trim(), "B(*)");
+    assert_eq!(row_text(tab_rect("tab_done")).trim(), "C(完成)");
+    // Plain-shell tabs keep a bare label.
+    assert_eq!(row_text(tab_rect("tab_plain")).trim(), "D");
+}
+
+#[test]
+fn tab_bar_status_uses_first_pane_and_blocked_colors() {
+    let mut snapshot = snapshot();
+    snapshot.tabs = vec![
+        ClientShellTab {
+            tab_id: "tab_first_working".into(),
+            workspace_id: "ws_1".into(),
+            number: 1,
+            label: "first".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            // Aggregate says done (the attention winner) but the first pane
+            // is working — the tab must render from the first pane's status.
+            agent_status: AgentStatus::Done,
+            first_agent_status: AgentStatus::Working,
+        },
+        ClientShellTab {
+            tab_id: "tab_blocked".into(),
+            workspace_id: "ws_1".into(),
+            number: 2,
+            label: "blocked".into(),
+            custom_label: false,
+            zoomed: false,
+            focused: false,
+            agent_status: AgentStatus::Blocked,
+            first_agent_status: AgentStatus::Blocked,
+        },
+    ];
+    snapshot.focused_tab_id = Some("tab_blocked".into());
+    snapshot.workspaces[0].active_tab_id = "tab_blocked".into();
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot));
+    state.set_pane_surface(surface());
+    let shell = state.compose(120, 20).expect("tab bar frame");
+    let buffer = shell.to_ratatui_buffer().expect("shell buffer");
+
+    let tab_rect = |tab_id: &str| {
+        state
+            .hits
+            .tabs
+            .iter()
+            .find(|(_, id)| id == tab_id)
+            .map(|(rect, _)| *rect)
+            .expect("tab hit rect")
+    };
+
+    let first = tab_rect("tab_first_working");
+    assert_eq!(
+        buffer[(first.x + 1, first.y)].bg,
+        state.config.palette.tab_working_bg
+    );
+
+    let blocked = tab_rect("tab_blocked");
+    assert_eq!(
+        buffer[(blocked.x + 1, blocked.y)].bg,
+        state.config.palette.tab_blocked_bg
     );
 }

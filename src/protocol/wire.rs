@@ -917,6 +917,27 @@ where
     })
 }
 
+fn deserialize_client_shell_first_agent_status<'de, D>(
+    deserializer: D,
+) -> Result<crate::api::schema::AgentStatus, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    if !deserializer.is_human_readable() {
+        return crate::api::schema::AgentStatus::deserialize(deserializer);
+    }
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt
+        .map(|value| match value.as_str() {
+            "idle" => crate::api::schema::AgentStatus::Idle,
+            "working" => crate::api::schema::AgentStatus::Working,
+            "blocked" => crate::api::schema::AgentStatus::Blocked,
+            "done" => crate::api::schema::AgentStatus::Done,
+            _ => crate::api::schema::AgentStatus::Unknown,
+        })
+        .unwrap_or(crate::api::schema::AgentStatus::Unknown))
+}
+
 /// Initial resource projection used by the stable client-owned shell.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientShellSnapshot {
@@ -1058,6 +1079,9 @@ pub struct ClientShellTab {
     pub focused: bool,
     #[serde(deserialize_with = "deserialize_client_shell_agent_status")]
     pub agent_status: crate::api::schema::AgentStatus,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_client_shell_first_agent_status")]
+    pub first_agent_status: crate::api::schema::AgentStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2728,6 +2752,7 @@ mod tests {
                 zoomed: false,
                 focused: true,
                 agent_status: crate::api::schema::AgentStatus::Idle,
+                first_agent_status: crate::api::schema::AgentStatus::Idle,
             }],
             panes: vec![ClientShellPane {
                 pane_id: "w1:p1".into(),

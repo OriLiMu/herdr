@@ -95,6 +95,7 @@ pub(super) fn snapshot(
                 custom_label: !state.is_auto_named(),
                 zoomed: state.zoomed,
                 agent_status: tab.agent_status,
+                first_agent_status: tab.first_agent_status,
             }
         })
         .collect();

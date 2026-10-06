@@ -217,6 +217,19 @@ impl App {
             })
             .max_by_key(|(state, seen)| tab_attention_priority(*state, *seen))
             .unwrap_or((crate::detect::AgentState::Unknown, true));
+        // First pane in layout order = top-left pane (pre-order traversal puts
+        // the first child of horizontal/vertical splits first).
+        let first_pane_id = tab.layout.pane_ids().first().copied();
+        let (first_state, first_seen) = first_pane_id
+            .and_then(|pane_id| {
+                tab.panes.get(&pane_id).and_then(|pane| {
+                    self.state
+                        .terminals
+                        .get(&pane.attached_terminal_id)
+                        .map(|terminal| (terminal.state, pane.seen))
+                })
+            })
+            .unwrap_or((crate::detect::AgentState::Unknown, true));
         Some(crate::api::schema::TabInfo {
             tab_id: self.public_tab_id(ws_idx, tab_idx)?,
             workspace_id: self.public_workspace_id(ws_idx),
@@ -225,6 +238,7 @@ impl App {
             focused: self.state.active == Some(ws_idx) && ws.active_tab == tab_idx,
             pane_count: tab.panes.len(),
             agent_status: pane_agent_status(agg_state, seen),
+            first_agent_status: pane_agent_status(first_state, first_seen),
         })
     }
 

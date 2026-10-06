@@ -45,4 +45,7 @@ pub struct TabInfo {
     pub focused: bool,
     pub pane_count: usize,
     pub agent_status: AgentStatus,
+    /// Agent status of the first (top-left) pane in layout order.
+    #[serde(default)]
+    pub first_agent_status: AgentStatus,
 }

@@ -1034,6 +1034,11 @@
             "agent_status": {
               "$ref": "#/schemas/event/$defs/AgentStatus"
             },
+            "first_agent_status": {
+              "$ref": "#/schemas/event/$defs/AgentStatus",
+              "default": "unknown",
+              "description": "Agent status of the first (top-left) pane in layout order."
+            },
             "focused": {
               "type": "boolean"
             },
@@ -10702,6 +10707,11 @@
           "properties": {
             "agent_status": {
               "$ref": "#/schemas/success_response/$defs/AgentStatus"
+            },
+            "first_agent_status": {
+              "$ref": "#/schemas/success_response/$defs/AgentStatus",
+              "default": "unknown",
+              "description": "Agent status of the first (top-left) pane in layout order."
             },
             "focused": {
               "type": "boolean"

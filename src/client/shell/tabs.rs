@@ -109,22 +109,18 @@ pub(crate) fn render_tab_bar(
             } else {
                 base
             }
-        } else if tab.agent_status == crate::api::schema::AgentStatus::Working {
-            // Running but not focused: light blue background so running tabs
-            // stand out from idle (grey) ones; mirrors the focused tab's
-            // accent-background treatment (contrast fg via panel_contrast_fg).
+        } else {
+            // Unfocused tabs are colored by the first (top-left) pane's agent
+            // status so running/finished/idle tabs stay distinguishable at a
+            // glance; plain-shell tabs keep the neutral surface treatment.
             let base = Style::default()
-                .fg(panel_contrast_fg(palette))
-                .bg(palette.blue);
+                .fg(palette.tab_status_fg)
+                .bg(tab_status_bg(tab.first_agent_status, palette));
             if tab.custom_label {
                 base.add_modifier(Modifier::BOLD)
             } else {
                 base
             }
-        } else if tab.custom_label {
-            Style::default().fg(palette.overlay1).bg(palette.surface0)
-        } else {
-            Style::default().fg(palette.overlay0).bg(palette.surface0)
         };
         let padding = width.saturating_sub(display_width(&name));
         let left = padding / 2;
@@ -384,10 +380,47 @@ fn max_tab_scroll(widths: &[u16], available: u16) -> usize {
 }
 
 fn tab_label(tab: &ClientShellTab) -> String {
-    if tab.zoomed {
+    let base = if tab.zoomed {
         format!("{} Z", tab.label)
     } else {
         tab.label.clone()
+    };
+    if tab.focused {
+        // Focused tab: status is already implied; just mark the focus asterisk.
+        format!("{base} (*)")
+    } else {
+        match tab_status_display(tab.first_agent_status) {
+            Some(suffix) => format!("{base} ({suffix})"),
+            None => base,
+        }
+    }
+}
+
+/// Chinese status suffix shown in unfocused tab labels. `None` renders no
+/// suffix (unknown agents and plain shells keep a bare label).
+fn tab_status_display(status: crate::api::schema::AgentStatus) -> Option<&'static str> {
+    match status {
+        crate::api::schema::AgentStatus::Working => Some("工作中"),
+        crate::api::schema::AgentStatus::Idle => Some("空闲"),
+        crate::api::schema::AgentStatus::Done => Some("完成"),
+        crate::api::schema::AgentStatus::Blocked => Some("阻塞"),
+        crate::api::schema::AgentStatus::Unknown => None,
+    }
+}
+
+/// Background color for an unfocused tab based on its first-pane agent status.
+/// Unknown/plain-shell tabs fall back to the neutral surface background.
+fn tab_status_bg(
+    status: crate::api::schema::AgentStatus,
+    palette: &crate::app::state::Palette,
+) -> ratatui::style::Color {
+    use crate::api::schema::AgentStatus;
+    match status {
+        AgentStatus::Working => palette.tab_working_bg,
+        AgentStatus::Idle => palette.tab_idle_bg,
+        AgentStatus::Done => palette.tab_done_bg,
+        AgentStatus::Blocked => palette.tab_blocked_bg,
+        AgentStatus::Unknown => palette.surface0,
     }
 }
 
