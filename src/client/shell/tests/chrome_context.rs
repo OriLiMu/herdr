@@ -583,25 +583,35 @@ fn running_unfocused_tab_uses_light_blue_in_tab_bar() {
             .expect("tab hit rect")
     };
 
+    let status_fg = |rect: ratatui::layout::Rect, expected: ratatui::style::Color| {
+        // Find the '(' of the status suffix and check the first status glyph.
+        let open = (rect.x..rect.right())
+            .find(|&x| buffer[(x, rect.y)].symbol() == "(")
+            .expect("status suffix");
+        assert_eq!(buffer[(open + 1, rect.y)].fg, expected);
+    };
+    let name_fg = |rect: ratatui::layout::Rect, expected: ratatui::style::Color| {
+        let first = (rect.x..rect.right())
+            .find(|&x| !buffer[(x, rect.y)].symbol().trim().is_empty())
+            .expect("tab name");
+        assert_eq!(buffer[(first, rect.y)].fg, expected);
+    };
+
     let idle = tab_rect("tab_idle");
     assert_eq!(
         buffer[(idle.x + 1, idle.y)].bg,
-        state.config.palette.tab_idle_bg
+        state.config.palette.tab_unfocused_bg
     );
-    assert_eq!(
-        buffer[(idle.x + 1, idle.y)].fg,
-        state.config.palette.tab_status_fg
-    );
+    name_fg(idle, state.config.palette.tab_name_fg);
+    status_fg(idle, state.config.palette.tab_idle_fg);
 
     let working = tab_rect("tab_working");
     assert_eq!(
         buffer[(working.x + 1, working.y)].bg,
-        state.config.palette.tab_working_bg
+        state.config.palette.tab_unfocused_bg
     );
-    assert_eq!(
-        buffer[(working.x + 1, working.y)].fg,
-        state.config.palette.tab_status_fg
-    );
+    name_fg(working, state.config.palette.tab_name_fg);
+    status_fg(working, state.config.palette.tab_working_fg);
 
     let focused = tab_rect("tab_focused_working");
     assert_eq!(
@@ -743,15 +753,16 @@ fn tab_bar_status_uses_first_pane_and_blocked_colors() {
             .expect("tab hit rect")
     };
 
+    let status_fg = |rect: ratatui::layout::Rect, expected: ratatui::style::Color| {
+        let open = (rect.x..rect.right())
+            .find(|&x| buffer[(x, rect.y)].symbol() == "(")
+            .expect("status suffix");
+        assert_eq!(buffer[(open + 1, rect.y)].fg, expected);
+    };
+
     let first = tab_rect("tab_first_working");
-    assert_eq!(
-        buffer[(first.x + 1, first.y)].bg,
-        state.config.palette.tab_working_bg
-    );
+    status_fg(first, state.config.palette.tab_working_fg);
 
     let blocked = tab_rect("tab_blocked");
-    assert_eq!(
-        buffer[(blocked.x + 1, blocked.y)].bg,
-        state.config.palette.tab_blocked_bg
-    );
+    status_fg(blocked, state.config.palette.tab_blocked_fg);
 }

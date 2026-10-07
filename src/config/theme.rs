@@ -121,11 +121,12 @@ pub struct CustomThemeColors {
     pub blue: Option<String>,
     pub teal: Option<String>,
     pub peach: Option<String>,
-    pub tab_working_bg: Option<String>,
-    pub tab_idle_bg: Option<String>,
-    pub tab_done_bg: Option<String>,
-    pub tab_blocked_bg: Option<String>,
-    pub tab_status_fg: Option<String>,
+    pub tab_unfocused_bg: Option<String>,
+    pub tab_name_fg: Option<String>,
+    pub tab_working_fg: Option<String>,
+    pub tab_idle_fg: Option<String>,
+    pub tab_done_fg: Option<String>,
+    pub tab_blocked_fg: Option<String>,
     /// Overrides applied when `auto_switch` selects a light appearance.
     pub light: Option<ModeThemeColors>,
     /// Overrides applied when `auto_switch` selects a dark appearance.
@@ -157,11 +158,12 @@ pub struct ModeThemeColors {
     pub blue: Option<String>,
     pub teal: Option<String>,
     pub peach: Option<String>,
-    pub tab_working_bg: Option<String>,
-    pub tab_idle_bg: Option<String>,
-    pub tab_done_bg: Option<String>,
-    pub tab_blocked_bg: Option<String>,
-    pub tab_status_fg: Option<String>,
+    pub tab_unfocused_bg: Option<String>,
+    pub tab_name_fg: Option<String>,
+    pub tab_working_fg: Option<String>,
+    pub tab_idle_fg: Option<String>,
+    pub tab_done_fg: Option<String>,
+    pub tab_blocked_fg: Option<String>,
 }
 
 /// Parse a color string into a ratatui Color.

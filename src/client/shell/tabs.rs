@@ -92,7 +92,7 @@ pub(crate) fn render_tab_bar(
     let mut first_visible = None;
     let mut last_visible = None;
     for (index, tab) in tabs.iter().enumerate().skip(*tab_scroll) {
-        let name = tab_label(tab);
+        let full_label = tab_label(tab);
         let desired = desired_widths[index];
         let remaining = tab_right.saturating_sub(x);
         let width = desired.min(remaining);
@@ -100,37 +100,57 @@ pub(crate) fn render_tab_bar(
             break;
         }
         let rect = Rect::new(x, area.y, width, 1);
-        let style = if tab.focused {
+        if tab.focused {
             let base = Style::default()
                 .fg(panel_contrast_fg(palette))
                 .bg(palette.accent);
-            if tab.custom_label {
+            let base = if tab.custom_label {
                 base.add_modifier(Modifier::BOLD)
             } else {
                 base
-            }
+            };
+            put_label(buffer, rect, &full_label, base);
         } else {
-            // Unfocused tabs are colored by the first (top-left) pane's agent
-            // status so running/finished/idle tabs stay distinguishable at a
-            // glance; plain-shell tabs keep the neutral surface treatment.
-            let base = Style::default()
-                .fg(palette.tab_status_fg)
-                .bg(tab_status_bg(tab.first_agent_status, palette));
-            if tab.custom_label {
-                base.add_modifier(Modifier::BOLD)
+            // Unfocused tabs: neutral dark-gray background; the tab name is a
+            // soft light gray and only the status suffix takes the status
+            // color so the agent state stays readable at a glance.
+            buffer.set_style(rect, Style::default().bg(palette.tab_unfocused_bg));
+            let (name, status) = tab_label_parts(tab);
+            let padding = width.saturating_sub(display_width(&full_label));
+            let mut cursor = rect.x + padding / 2;
+            let name_style_base = Style::default()
+                .fg(palette.tab_name_fg)
+                .bg(palette.tab_unfocused_bg);
+            let name_style = if tab.custom_label {
+                name_style_base.add_modifier(Modifier::BOLD)
             } else {
-                base
+                name_style_base
+            };
+            put_text(
+                buffer,
+                cursor,
+                rect.y,
+                rect.right().saturating_sub(cursor),
+                &name,
+                name_style,
+            );
+            cursor = cursor.saturating_add(display_width(&name));
+            if let Some(status) = status {
+                // One separating space between the name and the status suffix.
+                let status_style = Style::default()
+                    .fg(tab_status_fg(tab.first_agent_status, palette))
+                    .bg(palette.tab_unfocused_bg);
+                let status_text = format!(" ({status})");
+                put_text(
+                    buffer,
+                    cursor,
+                    rect.y,
+                    rect.right().saturating_sub(cursor),
+                    &status_text,
+                    status_style,
+                );
             }
-        };
-        let padding = width.saturating_sub(display_width(&name));
-        let left = padding / 2;
-        let text = format!(
-            "{empty:left$}{name}{empty:right_padding$}",
-            empty = "",
-            left = left as usize,
-            right_padding = padding.saturating_sub(left) as usize,
-        );
-        put_text(buffer, rect.x, rect.y, rect.width, &text, style);
+        }
         hits.tabs.push((rect, tab.tab_id.clone()));
         first_visible.get_or_insert(index);
         last_visible = Some(index);
@@ -396,6 +416,19 @@ fn tab_label(tab: &ClientShellTab) -> String {
     }
 }
 
+/// Name and status pieces of an unfocused tab label, rendered as separately
+/// styled spans. The status piece excludes its surrounding parentheses and
+/// separator space; `None` means the tab has no status suffix.
+fn tab_label_parts(tab: &ClientShellTab) -> (String, Option<&'static str>) {
+    let name = if tab.zoomed {
+        format!("{} Z", tab.label)
+    } else {
+        tab.label.clone()
+    };
+    let status = tab_status_display(tab.first_agent_status);
+    (name, status)
+}
+
 /// Chinese status suffix shown in unfocused tab labels. `None` renders no
 /// suffix (unknown agents and plain shells keep a bare label).
 fn tab_status_display(status: crate::api::schema::AgentStatus) -> Option<&'static str> {
@@ -408,20 +441,33 @@ fn tab_status_display(status: crate::api::schema::AgentStatus) -> Option<&'stati
     }
 }
 
-/// Background color for an unfocused tab based on its first-pane agent status.
-/// Unknown/plain-shell tabs fall back to the neutral surface background.
-fn tab_status_bg(
+/// Foreground color for an unfocused tab's status suffix, matching the
+/// agent state of its first (top-left) pane. Unknown/plain-shell tabs never
+/// render a suffix.
+fn tab_status_fg(
     status: crate::api::schema::AgentStatus,
     palette: &crate::app::state::Palette,
 ) -> ratatui::style::Color {
     use crate::api::schema::AgentStatus;
     match status {
-        AgentStatus::Working => palette.tab_working_bg,
-        AgentStatus::Idle => palette.tab_idle_bg,
-        AgentStatus::Done => palette.tab_done_bg,
-        AgentStatus::Blocked => palette.tab_blocked_bg,
-        AgentStatus::Unknown => palette.surface0,
+        AgentStatus::Working => palette.tab_working_fg,
+        AgentStatus::Idle => palette.tab_idle_fg,
+        AgentStatus::Done => palette.tab_done_fg,
+        AgentStatus::Blocked => palette.tab_blocked_fg,
+        AgentStatus::Unknown => palette.overlay0,
     }
+}
+
+fn put_label(buffer: &mut Buffer, rect: Rect, name: &str, style: Style) {
+    let padding = rect.width.saturating_sub(display_width(name));
+    let left = padding / 2;
+    let text = format!(
+        "{empty:left$}{name}{empty:right_padding$}",
+        empty = "",
+        left = left as usize,
+        right_padding = padding.saturating_sub(left) as usize,
+    );
+    put_text(buffer, rect.x, rect.y, rect.width, &text, style);
 }
 
 #[cfg(test)]
