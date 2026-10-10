@@ -2230,6 +2230,28 @@ impl ClientShellState {
                 }
             }
             MouseEventKind::Down(MouseButton::Middle) => {
+                // Middle-click on a tab closes it (browser-style).
+                let middle_click_tab = self
+                    .config
+                    .mouse_capture
+                    .then(|| {
+                        self.hits
+                            .tabs
+                            .iter()
+                            .find(|(rect, _)| super::contains(*rect, point))
+                            .map(|(_, tab_id)| tab_id.clone())
+                    })
+                    .flatten();
+                if let Some(tab_id) = middle_click_tab {
+                    self.tab_press = None;
+                    self.push_endpoint_method(
+                        crate::api::schema::Method::TabClose(crate::api::schema::TabTarget {
+                            tab_id,
+                        }),
+                        outcome,
+                    );
+                    return;
+                }
                 if let Some(hit) = self
                     .hits
                     .panes
