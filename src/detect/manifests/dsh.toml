@@ -1,0 +1,88 @@
+id = "dsh"
+version = "2026.10.25.1"
+min_engine_version = 3
+updated_at = "2026-10-25T00:00:00Z"
+aliases = ["dsh-tui", "deepseek-harness"]
+
+# DeepSeek Harness TUI (dsh / dsh-tui), a node-based TUI.
+# Screen/title evidence verified on live panes (2026-10-24/25):
+#   OSC title, idle      "✦ 🐋 <session topic>"
+#   OSC title, working   "<braille spinner> 🐋 <session topic>"
+#   bottom hint, working "   esc 中断"   (en: "esc interrupt")
+#   approval bar         "⏳ 等待审批 · Bash" / "Awaiting approval"
+#   approval footer      "↑/↓ 选择 · Enter 确认 · Esc 拒绝"
+#   approval options     "允许（仅本次）" / "拒绝"
+#   composer line        "⌸ ❯" inside a rounded box; footer shows "<model> · ▕█▏ <n> tps"
+# No rule matching falls back to idle (default_known_agent_idle_fallback).
+
+[[rules]]
+id = "approval_bar"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["⏳ 等待审批"]
+
+[[rules]]
+id = "approval_bar_en"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["Awaiting approval"]
+
+[[rules]]
+id = "approval_footer"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["选择 · Enter 确认 · Esc 拒绝"]
+
+[[rules]]
+id = "approval_allow_option"
+state = "blocked"
+priority = 1000
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+contains = ["允许（仅本次）"]
+
+[[rules]]
+id = "osc_title_spinner"
+state = "working"
+priority = 900
+region = "osc_title"
+visible_working = true
+regex = ['(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)']
+
+[[rules]]
+id = "working_interrupt_hint"
+state = "working"
+priority = 850
+region = "bottom_non_empty_lines(12)"
+visible_working = true
+contains = ["esc 中断"]
+
+[[rules]]
+id = "working_interrupt_hint_en"
+state = "working"
+priority = 850
+region = "bottom_non_empty_lines(12)"
+visible_working = true
+contains = ["esc interrupt"]
+
+[[rules]]
+id = "osc_title_idle_star"
+state = "idle"
+priority = 400
+region = "osc_title"
+visible_idle = true
+regex = ['^✦ ']
+
+[[rules]]
+id = "composer_prompt"
+state = "idle"
+priority = 300
+region = "bottom_non_empty_lines(4)"
+visible_idle = true
+line_regex = ['^\s*⌸\s*❯']

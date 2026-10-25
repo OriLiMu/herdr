@@ -65,10 +65,11 @@ pub enum Agent {
     Letta,
     Maki,
     Muse,
+    Dsh,
 }
 
 impl Agent {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -93,9 +94,10 @@ impl Agent {
         Self::Letta,
         Self::Maki,
         Self::Muse,
+        Self::Dsh,
     ];
 
-    pub const SCREEN_MANIFEST_AGENTS: [Self; 22] = [
+    pub const SCREEN_MANIFEST_AGENTS: [Self; 23] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -118,6 +120,7 @@ impl Agent {
         Self::Letta,
         Self::Maki,
         Self::Muse,
+        Self::Dsh,
     ];
 }
 
@@ -147,6 +150,7 @@ pub fn agent_label(agent: Agent) -> &'static str {
         Agent::Letta => "letta",
         Agent::Maki => "maki",
         Agent::Muse => "muse",
+        Agent::Dsh => "dsh",
     }
 }
 
@@ -182,6 +186,7 @@ pub fn interactive_agent_executable(agent: Agent) -> &'static str {
         Agent::Letta => "letta",
         Agent::Maki => "maki",
         Agent::Muse => "muse",
+        Agent::Dsh => "dsh",
     }
 }
 
@@ -222,6 +227,9 @@ fn lookup_agent(name: &str) -> Option<Agent> {
         "letta" | "letta-code" | "letta code" => Some(Agent::Letta),
         "maki" => Some(Agent::Maki),
         "muse" | "muse-code" | "muse-cli" => Some(Agent::Muse),
+        "dsh" | "dsh-tui" | "deepseek" | "deepseek-harness" | "deepseek harness" => {
+            Some(Agent::Dsh)
+        }
         _ if is_muse_versioned_binary(name) => Some(Agent::Muse),
         _ => None,
     }
@@ -394,7 +402,7 @@ fn normalized_process_name(process: &crate::platform::ForegroundProcess) -> Stri
             {
                 if matches!(
                     identify_agent(&wrapped_agent),
-                    Some(Agent::Qwen | Agent::Cline | Agent::Letta)
+                    Some(Agent::Qwen | Agent::Cline | Agent::Letta | Agent::Dsh)
                 ) {
                     return wrapped_agent;
                 }
@@ -942,6 +950,9 @@ mod tests {
         assert_eq!(identify_agent("Letta Code"), Some(Agent::Letta));
         assert_eq!(identify_agent("maki"), Some(Agent::Maki));
         assert_eq!(identify_agent("muse"), Some(Agent::Muse));
+        assert_eq!(identify_agent("dsh"), Some(Agent::Dsh));
+        assert_eq!(identify_agent("dsh-tui"), Some(Agent::Dsh));
+        assert_eq!(identify_agent("DeepSeek Harness"), Some(Agent::Dsh));
         assert_eq!(identify_agent("muse-code"), Some(Agent::Muse));
         assert_eq!(identify_agent("muse-cli"), Some(Agent::Muse));
         assert_eq!(identify_agent("muse-bin-0.1.0-R708.1"), Some(Agent::Muse));
@@ -982,6 +993,8 @@ mod tests {
         assert_eq!(parse_agent_label("letta-code"), Some(Agent::Letta));
         assert_eq!(parse_agent_label("maki"), Some(Agent::Maki));
         assert_eq!(parse_agent_label("kilo-code"), Some(Agent::Kilo));
+        assert_eq!(parse_agent_label("dsh-tui"), Some(Agent::Dsh));
+        assert_eq!(parse_agent_label("deepseek-harness"), Some(Agent::Dsh));
     }
 
     #[test]
@@ -1027,6 +1040,7 @@ mod tests {
             (Agent::Letta, "letta"),
             (Agent::Maki, "maki"),
             (Agent::Muse, "muse"),
+            (Agent::Dsh, "dsh"),
         ];
         assert_eq!(expected.len(), Agent::ALL.len());
         for (agent, executable) in expected {
@@ -1063,6 +1077,56 @@ mod tests {
             assert!(session_identity_only_integration(source, label));
             assert!(Agent::SCREEN_MANIFEST_AGENTS.contains(&agent));
         }
+    }
+
+    #[test]
+    fn identify_agent_in_job_detects_node_wrapped_dsh_tui() {
+        for argv in [
+            vec!["node", "/home/lizhe/.npm-global/bin/dsh-tui"],
+            vec![
+                "node",
+                "/home/lizhe/.dsh/profiles/dsh-tui/node_modules/@deepseek-harness-tui/dsh-tui/bin/dsh-tui.js",
+            ],
+        ] {
+            let job = crate::platform::ForegroundJob {
+                process_group_id: 123,
+                processes: vec![foreground_process(123, "node", &argv)],
+            };
+
+            assert_eq!(
+                identify_agent_in_job(&job),
+                Some((Agent::Dsh, "dsh".to_string())),
+                "argv: {argv:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn dsh_manifest_detects_observed_idle_working_and_approval_chrome() {
+        let idle = "  ╭────╮\n  ⌸ ❯\n  ╰────╯\n   glm-5.3-flash · ▕██▏ 50 tps · high";
+        assert_eq!(detect_state(Some(Agent::Dsh), idle), AgentState::Idle);
+
+        for screen in [
+            "  ⚙ Bash(curl …)\n   esc 中断\n  ╭──╮\n  ⌸ ❯\n  ╰──╯",
+            "  ⚙ Bash(curl …)\n   esc interrupt\n  ╭──╮\n  ⌸ ❯\n  ╰──╯",
+        ] {
+            assert_eq!(detect_state(Some(Agent::Dsh), screen), AgentState::Working);
+        }
+
+        for screen in [
+            "  ⏳ 等待审批 · Bash\n  允许（仅本次）\n  ↑/↓ 选择 · Enter 确认 · Esc 拒绝",
+            "  ⏳ Awaiting approval · Bash",
+        ] {
+            assert_eq!(detect_state(Some(Agent::Dsh), screen), AgentState::Blocked);
+        }
+
+        let spinning = detect_agent_with_osc(Some(Agent::Dsh), idle, "⠋ 🐋 topic", "");
+        assert_eq!(spinning.state, AgentState::Working);
+        assert!(spinning.visible_working);
+
+        let starred = detect_agent_with_osc(Some(Agent::Dsh), idle, "✦ 🐋 topic", "");
+        assert_eq!(starred.state, AgentState::Idle);
+        assert!(starred.visible_idle);
     }
 
     #[test]
